@@ -76,7 +76,7 @@ fun StatsScreen(navController: NavController, viewModel: StatsViewModel = hiltVi
             val entries = viewModel.getEntriesForChart(dataState.value)
             LineChart(entries = entries)
             Spacer(modifier = Modifier.height(16.dp))
-            TransactionList(Modifier, list = topExpense.value, "Top Spending", onSeeAllClicked = {})
+            //TransactionList(Modifier, list = topExpense.value, "Top Spending", onSeeAllClicked = {})
         }
     }
 }

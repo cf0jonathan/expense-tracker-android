@@ -144,7 +144,11 @@ fun TransactionListScreen(navController: NavController, viewModel: HomeViewModel
                         icon = icon!!,
                         date = item.date,
                         color = if (item.type == "Income") Color.Green else Color.Red,
-                        Modifier.animateItemPlacement(tween(100))
+                        modifier = Modifier,
+                        expense = item,
+                        onDeleteButtonClicked = { expense ->
+                            viewModel.deleteExpense(expense)
+                        }
                     )
                 }
             }
