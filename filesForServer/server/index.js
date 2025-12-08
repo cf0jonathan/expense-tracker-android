@@ -158,5 +158,5 @@ app.post('/create_sandbox_public_token', requireDemoKey, async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 8000;
+const port = process.env.PORT || 5000;
 app.listen(port, () => console.log(`Plaid demo server listening on http://0.0.0.0:${port} (PLAID_ENV=${PLAID_ENV})`));
