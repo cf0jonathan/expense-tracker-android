@@ -5,6 +5,9 @@ plugins {
     alias(libs.plugins.dagger.hilt)
 }
 
+// Optional Plaid SDK version (set in gradle.properties to enable Plaid integration)
+val plaidVersionProp: String? = project.findProperty("plaidSdkVersion")?.toString()
+
 android {
     namespace = "com.codewithfk.expensetracker.android"
     compileSdk = 34
@@ -20,6 +23,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Expose whether Plaid SDK was enabled at build time so runtime code can avoid hard references.
+        buildConfigField("boolean", "PLAID_SDK_ENABLED", (plaidVersionProp != null && plaidVersionProp.isNotBlank()).toString())
     }
 
     buildTypes {
@@ -40,6 +46,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -85,4 +92,13 @@ dependencies {
     val nav_version = "2.7.7"
     implementation("androidx.navigation:navigation-compose:$nav_version")
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+
+    // Plaid Link SDK: opt-in. Set `plaidSdkVersion` in your gradle.properties to enable.
+    // Example in gradle.properties: plaidSdkVersion=3.16.0
+    val plaidVersion: String? = project.findProperty("plaidSdkVersion")?.toString()
+    if (!plaidVersion.isNullOrBlank()) {
+        implementation("com.plaid.link:sdk-core:$plaidVersion")
+    } else {
+        // Plaid SDK not configured. To enable the SDK, add `plaidSdkVersion` to gradle.properties.
+    }
 }
