@@ -112,6 +112,28 @@ app.post('/exchange_public_token', requireDemoKey, async (req, res) => {
       console.log(`Stored access_token for item_id=${item_id}`);
     }
 
+    // In sandbox, proactively fire the INITIAL_UPDATE webhook and try to cache transactions so clients don't race.
+    if (PLAID_ENV === 'sandbox' && access_token) {
+      (async () => {
+        try {
+          console.log('Sandbox auto-fire: firing INITIAL_UPDATE for access_token');
+          await axios.post(`${PLAID_BASE}/sandbox/item/fire_webhook`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, webhook_code: 'INITIAL_UPDATE' }, { timeout: 10000 });
+          // Try to fetch transactions immediately and cache them
+          try {
+            const end = new Date().toISOString().slice(0, 10);
+            const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
+            const txResp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, start_date: start, end_date: end }, { timeout: 20000 });
+            ITEM_TRANSACTIONS[access_token] = txResp.data;
+            console.log('Auto-cached transactions after exchange (sandbox)', txResp.data?.total_transactions || 0);
+          } catch (fetchErr) {
+            console.warn('Auto-fetch transactions after sandbox webhook failed', fetchErr?.response?.data || fetchErr?.message || fetchErr);
+          }
+        } catch (fireErr) {
+          console.warn('Auto-fire sandbox webhook failed', fireErr?.response?.data || fireErr?.message || fireErr);
+        }
+      })();
+    }
+
     // FOR DEMO ONLY: returning access_token here so you can inspect it in the client.
     // DO NOT return access_token in a real production app. Instead store it securely server-side.
     res.json(resp.data);
