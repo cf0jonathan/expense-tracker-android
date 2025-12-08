@@ -130,6 +130,26 @@ app.post('/transactions_for_access_token', requireDemoKey, async (req, res) => {
   }
 });
 
+// New: transactions sync endpoint - calls Plaid's /transactions/sync to safely poll until transactions are available.
+// /transactions/sync does not return PRODUCT_NOT_READY; it will return incremental sync results (may be empty).
+app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res) => {
+  try {
+    const { access_token, cursor } = req.body;
+    if (!access_token) return res.status(400).json({ error: 'missing access_token in body' });
+
+    // Plaid /transactions/sync expects access_token and optionally a cursor to resume sync.
+    const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token };
+    if (cursor) body.cursor = cursor;
+
+    const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
+    // resp.data will contain 'added', 'modified', 'removed' and 'next_cursor' etc. Return to client as-is.
+    res.json(resp.data);
+  } catch (err) {
+    console.error('transactions.sync error:', err?.response?.data || err.message || err);
+    res.status(502).json({ error: 'transactions sync failed', details: err?.response?.data || err?.message });
+  }
+});
+
 // Sandbox helper: create a sandbox public_token for testing without running Plaid Link.
 // NOTE: This endpoint is intentionally restricted to PLAID_ENV === 'sandbox' to avoid misuse.
 // Usage (POST): { "institution_id": "ins_109508", "initial_products": ["transactions"] }

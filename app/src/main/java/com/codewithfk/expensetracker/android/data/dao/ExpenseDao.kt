@@ -31,4 +31,12 @@ interface ExpenseDao {
 
     @Update
     suspend fun updateExpense(expenseEntity: ExpenseEntity)
+
+    // Count total rows (useful for debugging inserts)
+    @Query("SELECT COUNT(*) FROM expense_table")
+    suspend fun countExpenses(): Int
+
+    // Return all expense rows as a list (debugging helper)
+    @Query("SELECT * FROM expense_table ORDER BY id DESC")
+    suspend fun getAllExpensesList(): List<ExpenseEntity>
 }
