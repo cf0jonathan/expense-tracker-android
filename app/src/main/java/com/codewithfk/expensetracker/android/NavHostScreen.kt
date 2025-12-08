@@ -24,6 +24,8 @@ import com.codewithfk.expensetracker.android.feature.add_expense.AddExpense
 import com.codewithfk.expensetracker.android.feature.home.HomeScreen
 import com.codewithfk.expensetracker.android.feature.stats.StatsScreen
 import com.codewithfk.expensetracker.android.feature.transactionlist.TransactionListScreen
+import com.codewithfk.expensetracker.android.feature.transactionlist.ExpenseScreen
+import com.codewithfk.expensetracker.android.feature.transactionlist.IncomeScreen
 import com.codewithfk.expensetracker.android.ui.theme.Zinc
 import com.codewithfk.expensetracker.android.feature.Budget.BudgetScreen
 
@@ -76,6 +78,14 @@ fun NavHostScreen() {
             composable(route = "/all_transactions") {
                 bottomBarVisibility = true // Show the bottom bar if you want it visible
                 TransactionListScreen(navController)
+            }
+            composable(route = "/all_expenses") {
+                bottomBarVisibility = true // Show the bottom bar if you want it visible
+                ExpenseScreen(navController)
+            }
+            composable(route = "/all_income") {
+                bottomBarVisibility = true // Show the bottom bar if you want it visible
+                IncomeScreen(navController)
             }
         }
     }

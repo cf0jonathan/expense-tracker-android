@@ -2,6 +2,7 @@ package com.codewithfk.expensetracker.android.feature.Budget
 
 import android.util.Log
 import android.view.LayoutInflater
+import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Companion.End
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,10 +51,11 @@ import androidx.navigation.NavController
 import com.codewithfk.expensetracker.android.R
 import com.codewithfk.expensetracker.android.base.HomeNavigationEvent
 import com.codewithfk.expensetracker.android.base.NavigationEvent
-import com.codewithfk.expensetracker.android.feature.home.CardItem
-import com.codewithfk.expensetracker.android.feature.home.CardRowItem
+import com.codewithfk.expensetracker.android.feature.Budget.BudgetCardItem
+import com.codewithfk.expensetracker.android.feature.Budget.BudgetCardRowItem
+import com.codewithfk.expensetracker.android.feature.Budget.BudgetUiEvent
+import com.codewithfk.expensetracker.android.feature.Budget.BudgetViewModel
 import com.codewithfk.expensetracker.android.feature.home.HomeUiEvent
-import com.codewithfk.expensetracker.android.feature.home.HomeViewModel
 import com.codewithfk.expensetracker.android.feature.home.MultiFloatingActionButton
 import com.codewithfk.expensetracker.android.utils.Utils
 import com.codewithfk.expensetracker.android.feature.home.TransactionList
@@ -67,21 +70,17 @@ import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineDataSet
 
 @Composable
-fun BudgetScreen(navController: NavController, viewModel: HomeViewModel = hiltViewModel()) {
+fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) {
         viewModel.navigationEvent.collect { event ->
             when (event) {
                 NavigationEvent.NavigateBack -> navController.popBackStack()
-                HomeNavigationEvent.NavigateToSeeAll -> {
-                    navController.navigate("/all_transactions")
+                HomeNavigationEvent.NavigateToSeeAllIncome -> {
+                    navController.navigate("/all_income")
                 }
 
-                HomeNavigationEvent.NavigateToAddIncome -> {
-                    navController.navigate("/add_income")
-                }
-
-                HomeNavigationEvent.NavigateToAddExpense -> {
-                    navController.navigate("/add_exp")
+                HomeNavigationEvent.NavigateToSeeAllExpenses -> {
+                    navController.navigate("/all_expenses")
                 }
 
                 else -> {}
@@ -128,47 +127,14 @@ fun BudgetScreen(navController: NavController, viewModel: HomeViewModel = hiltVi
                     start.linkTo(parent.start)
                     end.linkTo(parent.end)
                 },
-                balance = balance, income = income, expense = expense
-            )
-            Box (
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable {
-                        menuExpanded.value = true
-                    }
-            ) {
-                DropdownMenu(
-                    expanded = menuExpanded.value,
-                    onDismissRequest = { menuExpanded.value = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { ExpenseTextView(text = "Edit") },
-                        onClick = {
-                            menuExpanded.value = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { ExpenseTextView(text = "Delete") },
-                        onClick = {
-                            menuExpanded.value = false
-                        }
-                    )
+                balance = balance, income = income, expense = expense,
+                onSeeIncomeClicked = {
+                    viewModel.onEvent(BudgetUiEvent.OnSeeIncomeClicked)
+                },
+                onSeeExpensesClicked = {
+                    viewModel.onEvent(BudgetUiEvent.OnSeeExpensesClicked)
                 }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .constrainAs(add) {
-                        bottom.linkTo(parent.bottom)
-                        end.linkTo(parent.end)
-                    }, contentAlignment = Alignment.BottomEnd
-            ) {
-                BudgetActionButton(modifier = Modifier, {
-                    viewModel.onEvent(HomeUiEvent.OnAddExpenseClicked)
-                }, {
-                    viewModel.onEvent(HomeUiEvent.OnAddIncomeClicked)
-                })
-            }
+            )
         }
     }
 }
@@ -176,7 +142,9 @@ fun BudgetScreen(navController: NavController, viewModel: HomeViewModel = hiltVi
 @Composable
 fun BudgetCardItem(
     modifier: Modifier,
-    balance: String, income: String, expense: String
+    balance: String, income: String, expense: String,
+    onSeeIncomeClicked: () -> Unit,
+    onSeeExpensesClicked: () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -187,6 +155,7 @@ fun BudgetCardItem(
             .background(Zinc)
             .padding(16.dp)
     ) {
+        val menuExpanded = remember { mutableStateOf(false) }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -195,11 +164,41 @@ fun BudgetCardItem(
             Column (
                 modifier = Modifier
             ) {
-                ExpenseTextView(
-                    text = "Remaining Money for this Month",
-                    color = Color.White,
-                    style = Typography.titleMedium
-                )
+                Row {
+                    ExpenseTextView(
+                        text = "Remaining Money for this Month",
+                        color = Color.White,
+                        style = Typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Image(
+                        painter = painterResource(id = R.drawable.dots_menu),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp).clickable {
+                            menuExpanded.value = true
+                        },
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
+                    )
+                    DropdownMenu(
+                        expanded = menuExpanded.value,
+                        onDismissRequest = { menuExpanded.value = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { ExpenseTextView(text = "Income") },
+                            onClick = {
+                                menuExpanded.value = false
+                                onSeeIncomeClicked.invoke()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { ExpenseTextView(text = "Expenses") },
+                            onClick = {
+                                menuExpanded.value = false
+                                onSeeExpensesClicked.invoke()
+                            }
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.size(8.dp))
                 ExpenseTextView(
                     text = balance, color = Color.White, style = Typography.headlineLarge
@@ -213,7 +212,7 @@ fun BudgetCardItem(
                 .weight(1f)
 
         ) {
-            CardRowItem(
+            BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterStart),
                 title = "Budget Income",
@@ -221,7 +220,7 @@ fun BudgetCardItem(
                 imaget = R.drawable.ic_income
             )
             Spacer(modifier = Modifier.size(8.dp))
-            CardRowItem(
+            BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterEnd),
                 title = "Budget Expense",
@@ -235,7 +234,7 @@ fun BudgetCardItem(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            CardRowItem(
+            BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterStart),
                 title = "Income",
@@ -243,7 +242,7 @@ fun BudgetCardItem(
                 imaget = R.drawable.ic_income
             )
             Spacer(modifier = Modifier.size(8.dp))
-            CardRowItem(
+            BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterEnd),
                 title = "Expense",
@@ -256,72 +255,24 @@ fun BudgetCardItem(
 }
 
 @Composable
-fun BudgetActionButton(
-    modifier: Modifier,
-    onAddExpenseClicked: () -> Unit,
-    onAddIncomeClicked: () -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
+fun BudgetCardRowItem(modifier: Modifier, title: String, amount: String, imaget: Int) {
+    Column(modifier = modifier) {
+        Row {
 
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Secondary FABs
-            AnimatedVisibility(visible = expanded) {
-                Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(16.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(color = Zinc, shape = RoundedCornerShape(12.dp))
-                            .clickable {
-                                onAddIncomeClicked.invoke()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_income),
-                            contentDescription = "Change Budget",
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(color = Zinc, shape = RoundedCornerShape(12.dp))
-                            .clickable {
-                                onAddExpenseClicked.invoke()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_expense),
-                            contentDescription = "Change Expense",
-                            tint = Color.White
-                        )
-                    }
-                }
-            }
-            // Main FAB
-            Box(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(color = Zinc)
-                    .clickable {
-                        expanded = !expanded
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_addbutton),
-                    contentDescription = "small floating action button",
-                    modifier = Modifier.size(40.dp)
-                )
-            }
+            Image(
+                painter = painterResource(id = imaget),
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            ExpenseTextView(text = title, color = Color.White, style = Typography.bodyLarge)
+        }
+        Row {
+            Spacer(modifier = Modifier.size(4.dp))
+            ExpenseTextView(
+                text = amount,
+                color = Color.White,
+                style = Typography.titleLarge
+            )
         }
     }
 }

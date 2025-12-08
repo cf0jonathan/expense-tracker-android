@@ -279,13 +279,6 @@ fun CardItem(
                     text = balance, color = Color.White, style = Typography.headlineLarge
                 )
             }
-            Image(
-                painter = painterResource(id = R.drawable.dots_menu),
-                contentDescription = null,
-                modifier = Modifier.align(Alignment.CenterEnd).clickable {
-
-                }
-            )
         }
 
         Box(
