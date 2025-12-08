@@ -381,8 +381,8 @@ class PlaidLinkActivity : ComponentActivity() {
     // Fetch transactions from backend using access_token and insert into Room DB. Returns number inserted.
     private suspend fun fetchAndStoreTransactions(accessToken: String): Int = withContext(Dispatchers.IO) {
         // Retry loop: Plaid can return PRODUCT_NOT_READY in sandbox immediately after creating an item.
-        // Increase attempts and add jitter so sandbox has enough time to produce transactions.
-        val maxAttempts = 8
+        // Use a longer, production-safe schedule: more attempts, cap at 60s, and add jitter up to 1s.
+        val maxAttempts = 10
         var attempt = 0
         var lastRespBody: String? = null
         var lastCode = -1
@@ -490,9 +490,9 @@ class PlaidLinkActivity : ComponentActivity() {
                         val errorType = errJ?.optString("error_type") ?: errJ?.optJSONObject("details")?.optString("error_type")
                         Log.w(TAG, "transactions_for_access_token error code=$errorCode type=$errorType")
                         if (errorCode == "PRODUCT_NOT_READY") {
-                            // exponential backoff with cap and small random jitter to avoid synchronized retries
-                            val base = 1000L * (1 shl (attempt - 1)) // 1s,2s,4s...
-                            val waitMs = base.coerceAtMost(32000L) + Random.nextLong(0, 500)
+                            // exponential backoff with cap and random jitter to avoid synchronized retries
+                            val base = 1000L * (1L shl (attempt - 1)) // 1s,2s,4s...
+                            val waitMs = base.coerceAtMost(60000L) + Random.nextLong(0, 1000)
                             Log.i(TAG, "PRODUCT_NOT_READY, will retry after ${waitMs}ms (attempt $attempt/$maxAttempts)")
                             withContext(Dispatchers.Main) { plaidRuntimeStatus.value = "Transactions not ready, retrying... (attempt $attempt)" }
                             delay(waitMs)
@@ -512,7 +512,10 @@ class PlaidLinkActivity : ComponentActivity() {
                     withContext(Dispatchers.Main) { plaidRuntimeStatus.value = "Error fetching transactions: ${e.message}" }
                     return@withContext 0
                 }
-                val waitMs = 1000L * (1 shl (attempt - 1))
+                // use the same capped backoff + jitter for exceptions
+                val base = 1000L * (1L shl (attempt - 1))
+                val waitMs = base.coerceAtMost(60000L) + Random.nextLong(0, 1000)
+                Log.i(TAG, "Transient error, will retry after ${waitMs}ms (attempt $attempt/$maxAttempts)")
                 delay(waitMs)
                 continue
             }

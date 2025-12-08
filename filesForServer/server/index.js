@@ -55,6 +55,10 @@ function requireDemoKey(req, res, next) {
   next();
 }
 
+// In-memory demo store for access_tokens and transactions (for demo purposes only)
+const ITEM_ACCESS_TOKENS = {}; // item_id -> access_token
+const ITEM_TRANSACTIONS = {}; // access_token -> transactions response
+
 // Root - helpful info
 app.get('/', (req, res) => {
   res.send({
@@ -100,6 +104,14 @@ app.post('/exchange_public_token', requireDemoKey, async (req, res) => {
 
     const resp = await axios.post(`${PLAID_BASE}/item/public_token/exchange`, body, { timeout: 10000 });
 
+    // Store the access_token in-memory (demo only). Save by item_id so webhooks can reference it.
+    const access_token = resp.data?.access_token;
+    const item_id = resp.data?.item_id;
+    if (item_id && access_token) {
+      ITEM_ACCESS_TOKENS[item_id] = access_token;
+      console.log(`Stored access_token for item_id=${item_id}`);
+    }
+
     // FOR DEMO ONLY: returning access_token here so you can inspect it in the client.
     // DO NOT return access_token in a real production app. Instead store it securely server-side.
     res.json(resp.data);
@@ -115,6 +127,12 @@ app.post('/transactions_for_access_token', requireDemoKey, async (req, res) => {
   try {
     const { access_token, start_date, end_date } = req.body;
     if (!access_token) return res.status(400).json({ error: 'missing access_token in body' });
+
+    // If we have cached transactions for this access_token (populated by webhook), return them immediately.
+    if (ITEM_TRANSACTIONS[access_token]) {
+      console.log('Returning cached transactions for access_token');
+      return res.json(ITEM_TRANSACTIONS[access_token]);
+    }
 
     // default dates if not provided (last 30 days)
     const end = end_date || new Date().toISOString().slice(0, 10);
@@ -142,7 +160,6 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
     if (cursor) body.cursor = cursor;
 
     const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
-    // resp.data will contain 'added', 'modified', 'removed' and 'next_cursor' etc. Return to client as-is.
     res.json(resp.data);
   } catch (err) {
     console.error('transactions.sync error:', err?.response?.data || err.message || err);
@@ -150,11 +167,80 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
   }
 });
 
+// Webhook endpoint for Plaid to notify about update events (public endpoint)
+// For production: verify webhook authenticity following Plaid docs (verify signature) before trusting payload.
+app.post('/plaid_webhook', express.json(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    console.log('Received Plaid webhook:', JSON.stringify(body));
+
+    // Example webhook payload fields: webhook_type, webhook_code, item_id
+    const webhookType = body.webhook_type;
+    const webhookCode = body.webhook_code;
+    const itemId = body.item_id;
+
+    // Handle transaction readiness webhooks
+    if (webhookType === 'TRANSACTIONS' && (webhookCode === 'INITIAL_UPDATE' || webhookCode === 'HISTORICAL_UPDATE')) {
+      const accessToken = ITEM_ACCESS_TOKENS[itemId];
+      if (!accessToken) {
+        console.warn(`No access_token cached for item_id=${itemId}. Cannot fetch transactions.`);
+        // Acknowledge webhook; operator may need to re-run exchange or inspect logs
+        return res.status(200).send({ ok: true, message: 'no access_token for item' });
+      }
+
+      // Fetch transactions from Plaid and cache them server-side (demo)
+      try {
+        const end = new Date().toISOString().slice(0, 10);
+        const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
+        const resp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token: accessToken, start_date: start, end_date: end }, { timeout: 20000 });
+        ITEM_TRANSACTIONS[accessToken] = resp.data;
+        console.log(`Stored transactions for access_token (item=${itemId}), count=${resp.data?.total_transactions || 0}`);
+      } catch (e) {
+        console.error('Failed to fetch transactions on webhook', e?.response?.data || e?.message || e);
+      }
+    }
+
+    // Always respond 200 quickly to acknowledge webhook receipt
+    res.status(200).send({ ok: true });
+  } catch (err) {
+    console.error('Webhook handler error', err);
+    res.status(500).send({ error: 'webhook handler failed' });
+  }
+});
+
+// Sandbox helper to fire a Plaid sandbox webhook for a given access_token.
+// Usage (POST): { access_token: '<access-token>' }
+// This endpoint calls Plaid's sandbox /sandbox/item/fire_webhook and then (optionally) fetches transactions.
+app.post('/sandbox/fire_webhook', requireDemoKey, async (req, res) => {
+  if (PLAID_ENV !== 'sandbox') return res.status(400).json({ error: 'sandbox-only endpoint' });
+  try {
+    const { access_token } = req.body;
+    if (!access_token) return res.status(400).json({ error: 'missing access_token' });
+
+    const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, webhook_code: 'INITIAL_UPDATE' };
+    const resp = await axios.post(`${PLAID_BASE}/sandbox/item/fire_webhook`, body, { timeout: 10000 });
+    console.log('Sandbox fire_webhook response', resp.data);
+
+    // Optionally: fetch transactions immediately after firing webhook and cache them
+    try {
+      const end = new Date().toISOString().slice(0, 10);
+      const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
+      const txResp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, start_date: start, end_date: end }, { timeout: 20000 });
+      ITEM_TRANSACTIONS[access_token] = txResp.data;
+      console.log('Cached transactions after sandbox webhook', txResp.data?.total_transactions || 0);
+    } catch (e) {
+      console.warn('Failed to fetch transactions immediately after sandbox webhook', e?.response?.data || e?.message || e);
+    }
+
+    res.json({ ok: true, resp: resp.data });
+  } catch (err) {
+    console.error('sandbox fire_webhook error:', err?.response?.data || err?.message || err);
+    res.status(502).json({ error: 'fire_webhook failed', details: err?.response?.data || err?.message });
+  }
+});
+
 // Sandbox helper: create a sandbox public_token for testing without running Plaid Link.
 // NOTE: This endpoint is intentionally restricted to PLAID_ENV === 'sandbox' to avoid misuse.
-// Usage (POST): { "institution_id": "ins_109508", "initial_products": ["transactions"] }
-// If institution_id is not provided, the server will try a common sandbox institution. If it fails,
-// create a public_token using Plaid Link in the client instead.
 app.post('/create_sandbox_public_token', requireDemoKey, async (req, res) => {
   if (PLAID_ENV !== 'sandbox') {
     return res.status(400).json({ error: 'create_sandbox_public_token is only available in sandbox mode' });
