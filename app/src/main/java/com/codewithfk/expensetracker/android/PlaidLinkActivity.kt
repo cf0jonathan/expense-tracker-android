@@ -391,60 +391,10 @@ class PlaidLinkActivity : ComponentActivity() {
         while (attempt < maxAttempts) {
             attempt++
             try {
-                // First try: call backend's transactions_sync_for_access_token which proxies Plaid /transactions/sync
-                val syncUrl = joinUrl("transactions_sync_for_access_token")
-                val syncPayload = "{\"access_token\":\"$accessToken\"}"
-                Log.d(TAG, "POST $syncUrl payload={access_token:REDACTED} attempt=$attempt")
-
-                val syncUrlObj = URL(syncUrl)
-                val syncConn = (syncUrlObj.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("x-demo-key", DEMO_API_KEY)
-                    connectTimeout = 20000
-                    readTimeout = 20000
-                }
-
-                syncConn.outputStream.use { os ->
-                    os.write(syncPayload.toByteArray(Charsets.UTF_8))
-                    os.flush()
-                }
-
-                var code = syncConn.responseCode
-                var respBody = if (code in 200..299) syncConn.inputStream.bufferedReader().use(BufferedReader::readText) else syncConn.errorStream?.bufferedReader()?.use(BufferedReader::readText)
-                lastCode = code
-                lastRespBody = respBody
-
-                Log.d(TAG, "transactions_sync_for_access_token HTTP $code response=${respBody?.take(2000)}")
-
-                var syncHasAdded = false
-                if (code in 200..299 && !respBody.isNullOrBlank()) {
-                    try {
-                        val jobj = JSONObject(respBody)
-                        val added = jobj.optJSONArray("added")
-                        if (added != null && added.length() > 0) {
-                            // Convert 'added' array into the transactions JSONArray expected by downstream code.
-                            transactions = JSONArray()
-                            for (i in 0 until added.length()) {
-                                transactions.put(added.getJSONObject(i))
-                            }
-                            syncHasAdded = true
-                        }
-                    } catch (je: Exception) {
-                        Log.w(TAG, "Failed to parse sync response JSON", je)
-                    }
-                }
-
-                if (syncHasAdded) {
-                    Log.d(TAG, "transactions.sync returned ${transactions.length()} added transactions; proceeding to insert")
-                    break
-                }
-
-                // If sync returned no added items, fall back to GET transactions endpoint and continue retry logic.
+                // Call the backend's transactions_for_access_token and let the server handle sync/polling.
                 val urlStr = joinUrl("transactions_for_access_token")
                 val payload = "{\"access_token\":\"$accessToken\"}"
-                Log.d(TAG, "POST $urlStr payload={access_token:REDACTED} (fallback) attempt=$attempt")
+                Log.d(TAG, "POST $urlStr payload={access_token:REDACTED} attempt=$attempt")
 
                 val url = URL(urlStr)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -461,9 +411,9 @@ class PlaidLinkActivity : ComponentActivity() {
                     os.flush()
                 }
 
-                code = conn.responseCode
+                val code = conn.responseCode
+                val respBody = if (code in 200..299) conn.inputStream.bufferedReader().use(BufferedReader::readText) else conn.errorStream?.bufferedReader()?.use(BufferedReader::readText)
                 lastCode = code
-                respBody = if (code in 200..299) conn.inputStream.bufferedReader().use(BufferedReader::readText) else conn.errorStream?.bufferedReader()?.use(BufferedReader::readText)
                 lastRespBody = respBody
 
                 Log.d(TAG, "transactions_for_access_token HTTP $code response=${respBody?.take(2000)}")
@@ -471,7 +421,7 @@ class PlaidLinkActivity : ComponentActivity() {
                 if (code in 200..299) {
                     if (respBody.isNullOrBlank()) {
                         Log.e(TAG, "transactions_for_access_token returned empty body on success")
-                        // treat as no-data and retry
+                        // treat as failure and retry
                     } else {
                         val jobj = try { JSONObject(respBody) } catch (je: Exception) {
                             Log.e(TAG, "Failed to parse transactions JSON", je)
@@ -483,27 +433,8 @@ class PlaidLinkActivity : ComponentActivity() {
                         break
                     }
                 } else {
-                    // non-2xx: inspect Plaid error body for PRODUCT_NOT_READY and retry if so
-                    try {
-                        val errJ = if (!respBody.isNullOrBlank()) JSONObject(respBody) else null
-                        val errorCode = errJ?.optString("error_code") ?: errJ?.optJSONObject("details")?.optString("error_code")
-                        val errorType = errJ?.optString("error_type") ?: errJ?.optJSONObject("details")?.optString("error_type")
-                        Log.w(TAG, "transactions_for_access_token error code=$errorCode type=$errorType")
-                        if (errorCode == "PRODUCT_NOT_READY") {
-                            // exponential backoff with cap and random jitter to avoid synchronized retries
-                            val base = 1000L * (1L shl (attempt - 1)) // 1s,2s,4s...
-                            val waitMs = base.coerceAtMost(60000L) + Random.nextLong(0, 1000)
-                            Log.i(TAG, "PRODUCT_NOT_READY, will retry after ${waitMs}ms (attempt $attempt/$maxAttempts)")
-                            withContext(Dispatchers.Main) { plaidRuntimeStatus.value = "Transactions not ready, retrying... (attempt $attempt)" }
-                            delay(waitMs)
-                            continue
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to inspect error body for retry", e)
-                    }
-                    // Other errors: surface and stop
-                    withContext(Dispatchers.Main) { plaidRuntimeStatus.value = "transactions_for_access_token failed: HTTP $code - ${respBody ?: "<no body>"}" }
-                    return@withContext 0
+                    Log.w(TAG, "transactions_for_access_token returned non-200: $code, details=${respBody?.take(2000)}")
+                    // Let retry loop handle backoff (server may return 502 if not ready; we'll retry)
                 }
 
             } catch (e: Exception) {

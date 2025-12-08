@@ -135,8 +135,16 @@ app.post('/exchange_public_token', requireDemoKey, async (req, res) => {
     }
 
     // FOR DEMO ONLY: returning access_token here so you can inspect it in the client.
+    // Additionally, include cached transactions if the server already fetched them (sandbox auto-fetch) so clients can avoid a race.
     // DO NOT return access_token in a real production app. Instead store it securely server-side.
-    res.json(resp.data);
+    const out = Object.assign({}, resp.data);
+    if (access_token && ITEM_TRANSACTIONS[access_token]) {
+      out.cached_transactions = ITEM_TRANSACTIONS[access_token];
+      out.cached_transactions_present = true;
+    } else {
+      out.cached_transactions_present = false;
+    }
+    res.json(out);
   } catch (err) {
     console.error('public_token exchange error:', err?.response?.data || err.message || err);
     res.status(502).json({ error: 'public_token exchange failed', details: err?.response?.data || err?.message });
@@ -150,20 +158,57 @@ app.post('/transactions_for_access_token', requireDemoKey, async (req, res) => {
     const { access_token, start_date, end_date } = req.body;
     if (!access_token) return res.status(400).json({ error: 'missing access_token in body' });
 
-    // If we have cached transactions for this access_token (populated by webhook), return them immediately.
+    // If we have cached transactions for this access_token (populated by webhook or earlier fetch), return them immediately.
     if (ITEM_TRANSACTIONS[access_token]) {
       console.log('Returning cached transactions for access_token');
       return res.json(ITEM_TRANSACTIONS[access_token]);
     }
 
-    // default dates if not provided (last 30 days)
-    const end = end_date || new Date().toISOString().slice(0, 10);
+    // Poll Plaid /transactions/sync with backoff (server-side) to wait until transactions are ready.
+    // This avoids returning PRODUCT_NOT_READY to the client.
+    const maxAttempts = 10;
+    let attempt = 0;
+    let lastSyncResp = null;
     const start = start_date || new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
+    const end = end_date || new Date().toISOString().slice(0, 10);
 
-    const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, start_date: start, end_date: end };
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        console.log(`Polling transactions/sync attempt=${attempt} for access_token`);
+        const syncResp = await axios.post(`${PLAID_BASE}/transactions/sync`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token }, { timeout: 20000 });
+        lastSyncResp = syncResp.data;
 
-    const resp = await axios.post(`${PLAID_BASE}/transactions/get`, body, { timeout: 20000 });
-    res.json(resp.data);
+        // If sync reports added[] items or update status not NOT_READY, proceed to fetch full transactions.
+        const added = syncResp.data?.added;
+        const updateStatus = syncResp.data?.transactions_update_status;
+        if ((Array.isArray(added) && added.length > 0) || (typeof updateStatus === 'string' && updateStatus !== 'NOT_READY')) {
+          try {
+            const resp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, start_date: start, end_date: end }, { timeout: 20000 });
+            // Cache and return
+            ITEM_TRANSACTIONS[access_token] = resp.data;
+            console.log(`Fetched and cached transactions after sync for access_token, total=${resp.data?.total_transactions || 0}`);
+            return res.json(resp.data);
+          } catch (e) {
+            console.warn('transactions.get failed after sync indicated readiness', e?.response?.data || e?.message || e);
+            // fallthrough to retry
+          }
+        }
+      } catch (err) {
+        console.warn('transactions.sync call failed', err?.response?.data || err?.message || err);
+        // continue to retry
+      }
+
+      // backoff before next attempt (exponential with cap and jitter)
+      const base = 1000 * (1 << Math.min(attempt - 1, 10)); // 1s,2s,4s,8s,16s,32s,64s... capped below
+      const waitMs = Math.min(base, 60000) + Math.floor(Math.random() * 1000);
+      console.log(`transactions_for_access_token: waiting ${waitMs}ms before next sync attempt (attempt ${attempt}/${maxAttempts})`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+
+    // If we get here, retries exhausted. If we have a lastSyncResp include it in error details to aid debugging.
+    console.warn('No transactions after polling sync; returning last known sync response');
+    return res.status(502).json({ error: 'transactions fetch failed - not ready', details: lastSyncResp || {} });
   } catch (err) {
     console.error('transactions.get error:', err?.response?.data || err.message || err);
     res.status(502).json({ error: 'transactions fetch failed', details: err?.response?.data || err?.message });
@@ -179,112 +224,4 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
 
     // Plaid /transactions/sync expects access_token and optionally a cursor to resume sync.
     const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token };
-    if (cursor) body.cursor = cursor;
-
-    const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
-    res.json(resp.data);
-  } catch (err) {
-    console.error('transactions.sync error:', err?.response?.data || err.message || err);
-    res.status(502).json({ error: 'transactions sync failed', details: err?.response?.data || err?.message });
-  }
-});
-
-// Webhook endpoint for Plaid to notify about update events (public endpoint)
-// For production: verify webhook authenticity following Plaid docs (verify signature) before trusting payload.
-app.post('/plaid_webhook', express.json(), async (req, res) => {
-  try {
-    const body = req.body || {};
-    console.log('Received Plaid webhook:', JSON.stringify(body));
-
-    // Example webhook payload fields: webhook_type, webhook_code, item_id
-    const webhookType = body.webhook_type;
-    const webhookCode = body.webhook_code;
-    const itemId = body.item_id;
-
-    // Handle transaction readiness webhooks
-    if (webhookType === 'TRANSACTIONS' && (webhookCode === 'INITIAL_UPDATE' || webhookCode === 'HISTORICAL_UPDATE')) {
-      const accessToken = ITEM_ACCESS_TOKENS[itemId];
-      if (!accessToken) {
-        console.warn(`No access_token cached for item_id=${itemId}. Cannot fetch transactions.`);
-        // Acknowledge webhook; operator may need to re-run exchange or inspect logs
-        return res.status(200).send({ ok: true, message: 'no access_token for item' });
-      }
-
-      // Fetch transactions from Plaid and cache them server-side (demo)
-      try {
-        const end = new Date().toISOString().slice(0, 10);
-        const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
-        const resp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token: accessToken, start_date: start, end_date: end }, { timeout: 20000 });
-        ITEM_TRANSACTIONS[accessToken] = resp.data;
-        console.log(`Stored transactions for access_token (item=${itemId}), count=${resp.data?.total_transactions || 0}`);
-      } catch (e) {
-        console.error('Failed to fetch transactions on webhook', e?.response?.data || e?.message || e);
-      }
-    }
-
-    // Always respond 200 quickly to acknowledge webhook receipt
-    res.status(200).send({ ok: true });
-  } catch (err) {
-    console.error('Webhook handler error', err);
-    res.status(500).send({ error: 'webhook handler failed' });
-  }
-});
-
-// Sandbox helper to fire a Plaid sandbox webhook for a given access_token.
-// Usage (POST): { access_token: '<access-token>' }
-// This endpoint calls Plaid's sandbox /sandbox/item/fire_webhook and then (optionally) fetches transactions.
-app.post('/sandbox/fire_webhook', requireDemoKey, async (req, res) => {
-  if (PLAID_ENV !== 'sandbox') return res.status(400).json({ error: 'sandbox-only endpoint' });
-  try {
-    const { access_token } = req.body;
-    if (!access_token) return res.status(400).json({ error: 'missing access_token' });
-
-    const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, webhook_code: 'INITIAL_UPDATE' };
-    const resp = await axios.post(`${PLAID_BASE}/sandbox/item/fire_webhook`, body, { timeout: 10000 });
-    console.log('Sandbox fire_webhook response', resp.data);
-
-    // Optionally: fetch transactions immediately after firing webhook and cache them
-    try {
-      const end = new Date().toISOString().slice(0, 10);
-      const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString().slice(0, 10);
-      const txResp = await axios.post(`${PLAID_BASE}/transactions/get`, { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token, start_date: start, end_date: end }, { timeout: 20000 });
-      ITEM_TRANSACTIONS[access_token] = txResp.data;
-      console.log('Cached transactions after sandbox webhook', txResp.data?.total_transactions || 0);
-    } catch (e) {
-      console.warn('Failed to fetch transactions immediately after sandbox webhook', e?.response?.data || e?.message || e);
-    }
-
-    res.json({ ok: true, resp: resp.data });
-  } catch (err) {
-    console.error('sandbox fire_webhook error:', err?.response?.data || err?.message || err);
-    res.status(502).json({ error: 'fire_webhook failed', details: err?.response?.data || err?.message });
-  }
-});
-
-// Sandbox helper: create a sandbox public_token for testing without running Plaid Link.
-// NOTE: This endpoint is intentionally restricted to PLAID_ENV === 'sandbox' to avoid misuse.
-app.post('/create_sandbox_public_token', requireDemoKey, async (req, res) => {
-  if (PLAID_ENV !== 'sandbox') {
-    return res.status(400).json({ error: 'create_sandbox_public_token is only available in sandbox mode' });
-  }
-  try {
-    const institution_id = req.body.institution_id || 'ins_109508'; // common sandbox institution (may vary)
-    const initial_products = req.body.initial_products || ['transactions'];
-
-    const body = {
-      client_id: PLAID_CLIENT_ID,
-      secret: PLAID_SECRET,
-      institution_id,
-      initial_products
-    };
-
-    const resp = await axios.post(`${PLAID_BASE}/sandbox/public_token/create`, body, { timeout: 10000 });
-    res.json(resp.data);
-  } catch (err) {
-    console.error('sandbox public_token create error:', err?.response?.data || err.message || err);
-    res.status(502).json({ error: 'sandbox public_token creation failed', details: err?.response?.data || err?.message });
-  }
-});
-
-const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`Plaid demo server listening on http://0.0.0.0:${port} (PLAID_ENV=${PLAID_ENV})`));
+    if
