@@ -224,4 +224,32 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
 
     // Plaid /transactions/sync expects access_token and optionally a cursor to resume sync.
     const body = { client_id: PLAID_CLIENT_ID, secret: PLAID_SECRET, access_token };
-    if
+    if (cursor) {
+      body.cursor = cursor;
+    }
+
+    const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
+    res.json(resp.data);
+  } catch (err) {
+    console.error('transactions.sync error:', err?.response?.data || err.message || err);
+    res.status(502).json({ error: 'transactions sync failed', details: err?.response?.data || err?.message });
+  }
+});
+
+// Debug endpoint to inspect in-memory store (DEMO ONLY).
+// Returns list of item_ids and cached transaction counts. Protected by demo key.
+app.get('/debug/state', requireDemoKey, (req, res) => {
+  try {
+    const items = Object.keys(ITEM_ACCESS_TOKENS).map(itemId => ({ item_id: itemId, access_token_present: !!ITEM_ACCESS_TOKENS[itemId] }));
+    const txs = Object.keys(ITEM_TRANSACTIONS).map(at => ({ access_token: at, total_transactions: ITEM_TRANSACTIONS[at]?.total_transactions || 0 }));
+    res.json({ items, transactions_cached: txs });
+  } catch (e) {
+    res.status(500).json({ error: 'debug failed', details: e?.message });
+  }
+});
+
+// Start server (for Replit, this is auto-configured to match the environment)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Plaid demo server listening on port ${PORT}`);
+});
