@@ -25,6 +25,7 @@ import com.codewithfk.expensetracker.android.feature.home.HomeScreen
 import com.codewithfk.expensetracker.android.feature.stats.StatsScreen
 import com.codewithfk.expensetracker.android.feature.transactionlist.TransactionListScreen
 import com.codewithfk.expensetracker.android.ui.theme.Zinc
+import com.codewithfk.expensetracker.android.feature.Budget.BudgetScreen
 
 @Composable
 fun NavHostScreen() {
@@ -39,7 +40,8 @@ fun NavHostScreen() {
                 navController = navController,
                 items = listOf(
                     NavItem(route = "/home", icon = R.drawable.ic_home),
-                    NavItem(route = "/stats", icon = R.drawable.ic_stats)
+                    NavItem(route = "/stats", icon = R.drawable.ic_stats),
+                    NavItem(route = "/budget", icon = R.drawable.ic_stats)
                 )
             )
         }
@@ -66,6 +68,10 @@ fun NavHostScreen() {
             composable(route = "/stats") {
                 bottomBarVisibility = true
                 StatsScreen(navController)
+            }
+            composable(route = "/budget") {
+                bottomBarVisibility = true
+                BudgetScreen(navController)
             }
             composable(route = "/all_transactions") {
                 bottomBarVisibility = true // Show the bottom bar if you want it visible
@@ -117,4 +123,3 @@ fun NavigationBottomBar(
         }
     }
 }
-

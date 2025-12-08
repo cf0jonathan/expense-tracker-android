@@ -76,6 +76,24 @@ class HomeViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
         }
         return Utils.formatCurrency(totalIncome)
     }
+
+    fun getBudgetLeft(list: List<ExpenseEntity>): String {
+        var totalIncome = 0.0
+        for (expense in list) {
+            if (expense.type == "Income") {
+                totalIncome += expense.amount
+            }
+        }
+        var total = 0.0
+        for (expense in list) {
+            if (expense.type != "Income") {
+                total += expense.amount
+            }
+        }
+
+        totalIncome -= total
+        return Utils.formatCurrency(totalIncome)
+    }
 }
 
 sealed class HomeUiEvent : UiEvent() {

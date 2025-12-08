@@ -78,11 +78,11 @@ fun TransactionListScreen(navController: NavController, viewModel: HomeViewModel
                 // Title
                 ExpenseTextView(
                     text = "Transactions",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .padding(16.dp)
-                        .align(Alignment.Center)
+                        .align(Alignment.Center),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
                 )
 
                 // Three Dots Menu

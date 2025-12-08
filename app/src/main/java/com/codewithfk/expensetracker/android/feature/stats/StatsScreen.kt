@@ -56,11 +56,11 @@ fun StatsScreen(navController: NavController, viewModel: StatsViewModel = hiltVi
             )
             ExpenseTextView(
                 text = "Statistics",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .padding(16.dp)
-                    .align(Alignment.Center)
+                    .align(Alignment.Center),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
             )
             Image(
                 painter = painterResource(id = R.drawable.dots_menu),
