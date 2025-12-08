@@ -43,7 +43,7 @@ private const val TAG = "PlaidLinkActivity"
 
 // TODO: set these values for local testing. For emulator use http://10.0.2.2:8000
 // Replit backend URL provided by you:
-private const val BACKEND_BASE = "https://5c2c168e-d464-422f-8be9-93ee9eed9c2f-00-1vt53aj1y0ruo.spock.replit.dev" // <-- Replit URL
+private const val BACKEND_BASE = "https://8662df20-18fc-4262-828b-6bcc97648a5e-00-10mhwkj9qom2o.janeway.replit.dev/" // <-- Replit URL
 private const val DEMO_API_KEY = "totallySecureDemoKeyForProjectAtUALR" // <-- replace with your DEMO_API_KEY or wire from BuildConfig/gradle property
 
 @AndroidEntryPoint
