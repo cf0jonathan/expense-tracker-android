@@ -1,6 +1,8 @@
 package com.codewithfk.expensetracker.android.feature.home
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.estimateAnimationDurationMillis
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -18,8 +20,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
@@ -52,6 +64,8 @@ import com.codewithfk.expensetracker.android.R
 import com.codewithfk.expensetracker.android.base.AddExpenseNavigationEvent
 import com.codewithfk.expensetracker.android.base.HomeNavigationEvent
 import com.codewithfk.expensetracker.android.base.NavigationEvent
+import com.codewithfk.expensetracker.android.feature.add_expense.AddExpenseUiEvent
+import com.codewithfk.expensetracker.android.feature.add_expense.AddExpenseViewModel
 import com.codewithfk.expensetracker.android.ui.theme.Green
 import com.codewithfk.expensetracker.android.ui.theme.LightGrey
 import com.codewithfk.expensetracker.android.ui.theme.Red
@@ -141,6 +155,8 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                         height = Dimension.fillToConstraints
                     }, list = state.value, onSeeAllClicked = {
                     viewModel.onEvent(HomeUiEvent.OnSeeAllClicked)
+                },
+                onDeleteButtonClicked = { expense -> viewModel.deleteExpense(expense)
                 }
             )
 
@@ -266,7 +282,9 @@ fun CardItem(
             Image(
                 painter = painterResource(id = R.drawable.dots_menu),
                 contentDescription = null,
-                modifier = Modifier.align(Alignment.CenterEnd)
+                modifier = Modifier.align(Alignment.CenterEnd).clickable {
+
+                }
             )
         }
 
@@ -301,8 +319,10 @@ fun TransactionList(
     modifier: Modifier,
     list: List<ExpenseEntity>,
     title: String = "Recent Transactions",
-    onSeeAllClicked: () -> Unit
+    onSeeAllClicked: () -> Unit,
+    onDeleteButtonClicked: (ExpenseEntity) -> Unit
 ) {
+
     LazyColumn(modifier = modifier.padding(horizontal = 16.dp)) {
         item {
             Column {
@@ -336,27 +356,50 @@ fun TransactionList(
                 amount = Utils.formatCurrency(amount),
                 icon = icon,
                 date = Utils.formatStringDateToMonthDayYear(item.date),
-                color = if (item.type == "Income") Green else Red,
-                Modifier
+                color = if (item.type == "Income") Green else Red, modifier = Modifier,
+                expense = item,
+                onDeleteButtonClicked = { expenseToDelete -> onDeleteButtonClicked(expenseToDelete) }
             )
+
         }
+        //////////////////////////////////////////////////////////////////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////////////
     }
 }
 
 @Composable
 fun TransactionItem(
+    expense: ExpenseEntity,
+    navController: NavController? = null,
     title: String,
     amount: String,
     icon: Int,
     date: String,
     color: Color,
-    modifier: Modifier
-) {
+    modifier: Modifier,
+    viewModel: HomeViewModel = hiltViewModel(), //Changed AddExpenseViewModel and hilt
+    onDeleteButtonClicked: (ExpenseEntity) -> Unit
 
-    Box(
+) {
+    val menuExpanded = remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                NavigationEvent.NavigateBack -> navController?.popBackStack()
+                AddExpenseNavigationEvent.MenuOpenedClicked -> {
+                    menuExpanded.value = true
+                }
+                else->{}
+            }
+        }
+    }
+
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
@@ -371,14 +414,53 @@ fun TransactionItem(
                 ExpenseTextView(text = date, fontSize = 13.sp, color = LightGrey)
             }
         }
-        ExpenseTextView(
-            text = amount,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.CenterEnd),
-            color = color
-        )
-    }
+        Column(horizontalAlignment = Alignment.End) {
+            ExpenseTextView(
+                text = amount,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = color
+            )
+        }
+
+        Box (
+            modifier = Modifier
+                .size(24.dp)
+                .clickable {
+                    menuExpanded.value = true
+                }
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.dots_menu),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black)
+            )
+            DropdownMenu(
+                expanded = menuExpanded.value,
+                onDismissRequest = { menuExpanded.value = false }
+            ) {
+                DropdownMenuItem(
+                    text = { ExpenseTextView(text = "Edit") },
+                    onClick = {
+                        menuExpanded.value = false
+                        // Navigate to profile screen
+                        // navController.navigate("profile_route")
+                    }
+                )
+                DropdownMenuItem(
+                    text = { ExpenseTextView(text = "Delete") },
+                    onClick = {
+                        menuExpanded.value = false
+                        // Navigate to settings screen
+                        // navController.navigate("settings_route")
+                        Log.d("DeleteTransaction", "onDeleteClicked >_<: ")
+                        onDeleteButtonClicked(expense)
+                    }
+                )
+            }
+        }
+   }
 }
 
 @Composable

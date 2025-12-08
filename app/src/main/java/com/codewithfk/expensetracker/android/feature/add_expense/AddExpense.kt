@@ -222,6 +222,7 @@ fun DataForm(
                 "Gifts & Donations",
                 "Travel",
                 "Other Expenses"
+
             ),
             onItemSelected = {
                 name.value = it

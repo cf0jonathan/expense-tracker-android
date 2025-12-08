@@ -10,11 +10,18 @@ import com.codewithfk.expensetracker.android.data.model.ExpenseEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import android.util.Log
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
     val expenses = dao.getAllExpense()
 
+    fun deleteExpense(expenseEntity: ExpenseEntity) {
+        viewModelScope.launch {
+            dao.deleteExpense(expenseEntity)
+            Log.d("HomeViewModel", "Deleted expense: $expenseEntity")
+        }
+    }
     override fun onEvent(event: UiEvent) {
         when (event) {
             is HomeUiEvent.OnAddExpenseClicked -> {
@@ -75,4 +82,6 @@ sealed class HomeUiEvent : UiEvent() {
     data object OnAddExpenseClicked : HomeUiEvent()
     data object OnAddIncomeClicked : HomeUiEvent()
     data object OnSeeAllClicked : HomeUiEvent()
+
+    data object OnDeleteButtonClicked: HomeUiEvent()
 }
