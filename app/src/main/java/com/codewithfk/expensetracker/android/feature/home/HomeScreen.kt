@@ -1,5 +1,6 @@
 package com.codewithfk.expensetracker.android.feature.home
 
+import android.content.Intent
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.estimateAnimationDurationMillis
@@ -27,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,6 +74,8 @@ import com.codewithfk.expensetracker.android.ui.theme.LightGrey
 import com.codewithfk.expensetracker.android.ui.theme.Red
 import com.codewithfk.expensetracker.android.ui.theme.Typography
 import com.codewithfk.expensetracker.android.utils.Utils
+import androidx.compose.ui.platform.LocalContext
+import com.codewithfk.expensetracker.android.PlaidLinkActivity
 
 
 @Composable
@@ -124,6 +129,12 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                         style = Typography.titleLarge,
                         color = Color.White
                     )
+
+                    // Small button to launch the PlaidLinkActivity for testing the Plaid flow
+                    val ctx = LocalContext.current
+                    Button(onClick = { ctx.startActivity(Intent(ctx, PlaidLinkActivity::class.java)) }, modifier = Modifier.padding(top = 8.dp)) {
+                        Text(text = "Plaid Demo")
+                    }
                 }
                 Image(
                     painter = painterResource(id = R.drawable.ic_notification),

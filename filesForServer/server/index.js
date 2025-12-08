@@ -130,5 +130,33 @@ app.post('/transactions_for_access_token', requireDemoKey, async (req, res) => {
   }
 });
 
+// Sandbox helper: create a sandbox public_token for testing without running Plaid Link.
+// NOTE: This endpoint is intentionally restricted to PLAID_ENV === 'sandbox' to avoid misuse.
+// Usage (POST): { "institution_id": "ins_109508", "initial_products": ["transactions"] }
+// If institution_id is not provided, the server will try a common sandbox institution. If it fails,
+// create a public_token using Plaid Link in the client instead.
+app.post('/create_sandbox_public_token', requireDemoKey, async (req, res) => {
+  if (PLAID_ENV !== 'sandbox') {
+    return res.status(400).json({ error: 'create_sandbox_public_token is only available in sandbox mode' });
+  }
+  try {
+    const institution_id = req.body.institution_id || 'ins_109508'; // common sandbox institution (may vary)
+    const initial_products = req.body.initial_products || ['transactions'];
+
+    const body = {
+      client_id: PLAID_CLIENT_ID,
+      secret: PLAID_SECRET,
+      institution_id,
+      initial_products
+    };
+
+    const resp = await axios.post(`${PLAID_BASE}/sandbox/public_token/create`, body, { timeout: 10000 });
+    res.json(resp.data);
+  } catch (err) {
+    console.error('sandbox public_token create error:', err?.response?.data || err.message || err);
+    res.status(502).json({ error: 'sandbox public_token creation failed', details: err?.response?.data || err?.message });
+  }
+});
+
 const port = process.env.PORT || 8000;
 app.listen(port, () => console.log(`Plaid demo server listening on http://0.0.0.0:${port} (PLAID_ENV=${PLAID_ENV})`));

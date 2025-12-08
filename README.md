@@ -70,6 +70,27 @@ Here are some screenshots of the Expense Tracker app in action:
 - **Tracking with Stats:**
   - Go to the "Stats" section to view charts and summaries of your spending habits over time.
 
+## Plaid Integration (optional)
+
+This project includes a demo Plaid Link integration that is opt-in. To enable the Plaid SDK and build the app with Plaid Link, do the following:
+
+1. In the project root `gradle.properties`, add:
+
+```
+plaidSdkVersion=3.16.0
+```
+
+(Replace `3.16.0` with the exact stable version recommended by Plaid docs if needed.)
+
+2. Configure a demo API key and backend:
+
+- Local testing: copy `filesForServer/.env.example` to `filesForServer/.env` and set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `DEMO_API_KEY`.
+- Replit: set those same variables in Replit Secrets.
+
+3. Re-sync Gradle in Android Studio and rebuild the project.
+
+When `plaidSdkVersion` is set, the app will add the Plaid Link SDK dependency and `PlaidLinkActivity` can open Plaid Link using your backend.
+
 ## Contributions
 
 Contributions are welcome! Feel free to open issues or submit pull requests to help improve this project.
