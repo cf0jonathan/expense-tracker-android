@@ -32,6 +32,7 @@ import com.codewithfk.expensetracker.android.data.dao.ExpenseDao
 import com.codewithfk.expensetracker.android.data.model.ExpenseEntity
 import org.json.JSONObject
 import org.json.JSONArray
+import android.content.Context
 
 // PlaidLinkActivity
 // - Fetches a link_token from your backend and displays it for testing.
@@ -63,8 +64,68 @@ class PlaidLinkActivity : ComponentActivity() {
     private val lastExchangeJson = mutableStateOf<String?>(null)
     private val lastTransactionsJson = mutableStateOf<String?>(null)
 
+    // New: prefs and action constants for storing Plaid sign-in state and refreshing on launch
+    companion object {
+        const val PREFS_NAME = "app_prefs"
+        const val PREF_PLAID_SIGNED_IN = "plaid_signed_in"
+        const val PREF_PLAID_ACCESS_TOKEN = "plaid_access_token"
+        const val ACTION_REFRESH_ON_LAUNCH = "com.codewithfk.expensetracker.android.action.REFRESH_PLAID_ON_LAUNCH"
+        const val ACTION_FETCH_AND_OPEN = "com.codewithfk.expensetracker.android.action.FETCH_AND_OPEN"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // If launched solely to refresh Plaid transactions at app start, handle that and finish early.
+        if (intent?.action == ACTION_REFRESH_ON_LAUNCH) {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val accessToken = prefs.getString(PREF_PLAID_ACCESS_TOKEN, null)
+            if (!accessToken.isNullOrBlank()) {
+                lifecycleScope.launch {
+                    try {
+                        plaidRuntimeStatus.value = "Refreshing Plaid transactions on launch..."
+                        val count = fetchAndStoreTransactions(accessToken)
+                        Log.d(TAG, "Refreshed $count Plaid transactions on launch")
+                        plaidRuntimeStatus.value = "Refreshed $count Plaid transactions on launch"
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to refresh Plaid transactions on launch", e)
+                        plaidRuntimeStatus.value = "Refresh failed: ${e.message}"
+                    } finally {
+                        finish()
+                    }
+                }
+            } else {
+                // nothing to do, finish
+                finish()
+            }
+            return
+        }
+
+        // If launched to fetch a link token and immediately open Plaid Link, start that flow in background.
+        if (intent?.action == ACTION_FETCH_AND_OPEN) {
+            lifecycleScope.launch {
+                plaidRuntimeStatus.value = "Fetching link token..."
+                try {
+                    val token = fetchLinkToken()
+                    if (!token.isNullOrBlank()) {
+                        plaidRuntimeStatus.value = "Fetched link token"
+                        // Auto-open if SDK available; onOpenLinkClick will safely handle SDK missing cases.
+                        try {
+                            onOpenLinkClick(token)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to auto-open Plaid Link", e)
+                            plaidRuntimeStatus.value = "Failed to auto-open Plaid Link: ${e.message}"
+                        }
+                    } else {
+                        plaidRuntimeStatus.value = "Failed to fetch link token"
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching link token for autoflow", e)
+                    plaidRuntimeStatus.value = "Error fetching link token: ${e.message}"
+                }
+                // keep activity open so the user can see the status / fallback actions
+            }
+        }
 
         // Previously this registered a Plaid callback that referenced Plaid SDK classes directly.
         // That caused compile-time errors when the optional Plaid dependency wasn't added.
@@ -335,6 +396,28 @@ class PlaidLinkActivity : ComponentActivity() {
                     // Fetch transactions from backend and insert into local DB
                     val count = fetchAndStoreTransactions(accessToken)
                     Log.d(TAG, "Inserted $count transactions from Plaid into local DB")
+
+                    // Persist signed-in state and access token for refresh-on-launch
+                    try {
+                        val prefs = this@PlaidLinkActivity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putBoolean(PREF_PLAID_SIGNED_IN, true)
+                            .putString(PREF_PLAID_ACCESS_TOKEN, accessToken)
+                            .apply()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to save Plaid prefs", e)
+                    }
+
+                    // Finished successfully: return to the previous screen (Home).
+                    try {
+                        // Ensure we finish on the main thread
+                        withContext(Dispatchers.Main) {
+                            plaidRuntimeStatus.value = "Plaid sign-in complete — returning home"
+                            finish()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to finish PlaidLinkActivity after sign-in", e)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error exchanging public_token", e)
@@ -666,7 +749,9 @@ class PlaidLinkActivity : ComponentActivity() {
             val date = t.optString("date", "")
             val type = if (amount >= 0) "Expense" else "Income"
 
-            val entity = ExpenseEntity(id = null, title = name, amount = kotlin.math.abs(amount), date = date, type = type)
+            // Truncate the title to avoid long strings causing UI layout problems
+            val safeName = com.codewithfk.expensetracker.android.utils.Utils.truncateTitle(name)
+            val entity = ExpenseEntity(id = null, title = safeName, amount = kotlin.math.abs(amount), date = date, type = type)
             try {
                 Log.d(TAG, "Attempting to insert expense from Plaid: title=${entity.title}, amount=${entity.amount}, date=${entity.date}, type=${entity.type}")
                 expenseDao.insertExpense(entity)

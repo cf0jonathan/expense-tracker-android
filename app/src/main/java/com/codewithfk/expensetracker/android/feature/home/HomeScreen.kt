@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,6 +77,7 @@ import com.codewithfk.expensetracker.android.ui.theme.Typography
 import com.codewithfk.expensetracker.android.utils.Utils
 import androidx.compose.ui.platform.LocalContext
 import com.codewithfk.expensetracker.android.PlaidLinkActivity
+import com.codewithfk.expensetracker.android.ui.PlaidSignInButton
 
 
 @Composable
@@ -131,10 +133,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                     )
 
                     // Small button to launch the PlaidLinkActivity for testing the Plaid flow
-                    val ctx = LocalContext.current
-                    Button(onClick = { ctx.startActivity(Intent(ctx, PlaidLinkActivity::class.java)) }, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(text = "Plaid Demo")
-                    }
+                    PlaidSignInButton()
                 }
 //                Image(
 //                    painter = painterResource(id = R.drawable.ic_notification),
@@ -413,7 +412,14 @@ fun TransactionItem(
             )
             Spacer(modifier = Modifier.size(8.dp))
             Column {
-                ExpenseTextView(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                // Truncate longer transaction titles to a single line with ellipsis to avoid layout breakage
+                ExpenseTextView(
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1
+                )
                 Spacer(modifier = Modifier.size(6.dp))
                 ExpenseTextView(text = date, color = LightGrey, fontSize = 13.sp)
             }
@@ -444,14 +450,14 @@ fun TransactionItem(
                 expanded = menuExpanded.value,
                 onDismissRequest = { menuExpanded.value = false }
             ) {
-                DropdownMenuItem(
-                    text = { ExpenseTextView(text = "Edit") },
-                    onClick = {
-                        menuExpanded.value = false
-                        // Navigate to profile screen
-                        // navController.navigate("profile_route")
-                    }
-                )
+//                DropdownMenuItem(
+//                    text = { ExpenseTextView(text = "Edit") },
+//                    onClick = {
+//                        menuExpanded.value = false
+//                        // Navigate to profile screen
+//                        // navController.navigate("profile_route")
+//                    }
+//                )
                 DropdownMenuItem(
                     text = { ExpenseTextView(text = "Delete") },
                     onClick = {
