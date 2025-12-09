@@ -35,6 +35,57 @@ const PLAID_BASE = {
   production: 'https://production.plaid.com'
 }[PLAID_ENV];
 
+// FEATURE: FAKE_PLAID enables returning hardcoded Plaid-like transactions for sandbox/dev testing.
+// Default: enabled when PLAID_ENV === 'sandbox' or when env FAKE_PLAID=true
+const FAKE_PLAID = (process.env.FAKE_PLAID === 'true') || (PLAID_ENV === 'sandbox');
+
+// Simple helper that returns a Plaid-like /transactions/get response object for demo/testing.
+function generateFakeTransactions(accessToken) {
+  const today = new Date();
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  const accounts = [
+    { account_id: 'acct_plaid_1', balances: {}, holder_category: 'personal', mask: '0000', name: 'Plaid Checking', official_name: 'Plaid Gold Standard Checking', subtype: 'checking', type: 'depository' }
+  ];
+
+  const transactions = [
+    {
+      account_id: 'acct_plaid_1',
+      amount: 4.5,
+      date: fmt(new Date(today.getTime() - 1000 * 60 * 60 * 24 * 2)),
+      name: 'Demo Coffee',
+      merchant_name: 'Demo Coffee',
+      transaction_id: `tx_${Math.random().toString(36).substring(2,10)}`,
+      iso_currency_code: 'USD'
+    },
+    {
+      account_id: 'acct_plaid_1',
+      amount: 32.75,
+      date: fmt(new Date(today.getTime() - 1000 * 60 * 60 * 24 * 5)),
+      name: 'Demo Groceries',
+      merchant_name: 'Demo Market',
+      transaction_id: `tx_${Math.random().toString(36).substring(2,10)}`,
+      iso_currency_code: 'USD'
+    },
+    {
+      account_id: 'acct_plaid_1',
+      amount: -1500.00,
+      date: fmt(new Date(today.getTime() - 1000 * 60 * 60 * 24 * 20)),
+      name: 'Demo Salary',
+      merchant_name: 'Employer Inc',
+      transaction_id: `tx_${Math.random().toString(36).substring(2,10)}`,
+      iso_currency_code: 'USD'
+    }
+  ];
+
+  return {
+    accounts,
+    item: { item_id: `item_${accessToken?.slice?.(0,8) || 'demo'}` },
+    request_id: `req_${Math.random().toString(36).substring(2,8)}`,
+    total_transactions: transactions.length,
+    transactions
+  };
+}
+
 if (!PLAID_CLIENT_ID || PLAID_CLIENT_ID.startsWith('<REPLACE')) {
   console.warn('Warning: PLAID_CLIENT_ID not set. Set environment variable PLAID_CLIENT_ID.');
 }
@@ -95,6 +146,21 @@ app.post('/exchange_public_token', requireDemoKey, async (req, res) => {
   try {
     const { public_token } = req.body;
     if (!public_token) return res.status(400).json({ error: 'missing public_token in body' });
+
+    // If FAKE_PLAID is enabled, synthesize an access_token and cached transactions for demo/testing.
+    if (FAKE_PLAID) {
+      const access_token = `access-fake-${Math.random().toString(36).substring(2,10)}`;
+      const item_id = `item-fake-${Math.random().toString(36).substring(2,8)}`;
+      ITEM_ACCESS_TOKENS[item_id] = access_token;
+      // generate and cache fake transactions immediately
+      ITEM_TRANSACTIONS[access_token] = generateFakeTransactions(access_token);
+      console.log(`FAKE_PLAID enabled: created fake access_token for item_id=${item_id}`);
+
+      const out = { access_token, item_id, request_id: `req-${Math.random().toString(36).substring(2,8)}` };
+      out.cached_transactions = ITEM_TRANSACTIONS[access_token];
+      out.cached_transactions_present = true;
+      return res.json(out);
+    }
 
     const body = {
       client_id: PLAID_CLIENT_ID,
@@ -157,6 +223,17 @@ app.post('/transactions_for_access_token', requireDemoKey, async (req, res) => {
   try {
     const { access_token, start_date, end_date } = req.body;
     if (!access_token) return res.status(400).json({ error: 'missing access_token in body' });
+
+    // If FAKE_PLAID is enabled, generate or return cached fake transactions immediately.
+    if (FAKE_PLAID) {
+      if (!ITEM_TRANSACTIONS[access_token]) {
+        ITEM_TRANSACTIONS[access_token] = generateFakeTransactions(access_token);
+        console.log(`FAKE_PLAID: generated fake transactions for access_token=${access_token}`);
+      } else {
+        console.log(`FAKE_PLAID: returning cached fake transactions for access_token=${access_token}`);
+      }
+      return res.json(ITEM_TRANSACTIONS[access_token]);
+    }
 
     // If we have cached transactions for this access_token (populated by webhook or earlier fetch), return them immediately.
     if (ITEM_TRANSACTIONS[access_token]) {
@@ -231,25 +308,47 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
     const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
     res.json(resp.data);
   } catch (err) {
-    console.error('transactions.sync error:', err?.response?.data || err.message || err);
-    res.status(502).json({ error: 'transactions sync failed', details: err?.response?.data || err?.message });
+    console.error('transactions_sync error:', err?.response?.data || err.message || err);
+    res.status(502).json({ error: 'transactions_sync failed', details: err?.response?.data || err?.message });
+  }
+});
+
+// Webhook endpoint (demo) - lightweight acknowledgement and demo behavior
+app.post('/webhook', express.json(), (req, res) => {
+  try {
+    const body = req.body || {};
+    console.log('Webhook received:', JSON.stringify(body));
+
+    // Demo-only: if FAKE_PLAID and webhook indicates INITIAL_UPDATE, optionally cache fake txns
+    if (FAKE_PLAID && body.webhook_code === 'INITIAL_UPDATE' && body.item_id) {
+      const access_token = ITEM_ACCESS_TOKENS[body.item_id] || null;
+      if (access_token && !ITEM_TRANSACTIONS[access_token]) {
+        ITEM_TRANSACTIONS[access_token] = generateFakeTransactions(access_token);
+        console.log('FAKE_PLAID: cached fake transactions for access_token from webhook', access_token);
+      }
+    }
+
+    // Acknowledge quickly
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('Webhook handler error', e);
+    return res.status(500).json({ error: 'webhook handler failed' });
   }
 });
 
 // Debug endpoint to inspect in-memory store (DEMO ONLY).
-// Returns list of item_ids and cached transaction counts. Protected by demo key.
 app.get('/debug/state', requireDemoKey, (req, res) => {
   try {
     const items = Object.keys(ITEM_ACCESS_TOKENS).map(itemId => ({ item_id: itemId, access_token_present: !!ITEM_ACCESS_TOKENS[itemId] }));
     const txs = Object.keys(ITEM_TRANSACTIONS).map(at => ({ access_token: at, total_transactions: ITEM_TRANSACTIONS[at]?.total_transactions || 0 }));
-    res.json({ items, transactions_cached: txs });
+    res.json({ items, transactions_cached: txs, FAKE_PLAID });
   } catch (e) {
     res.status(500).json({ error: 'debug failed', details: e?.message });
   }
 });
 
-// Start server (for Replit, this is auto-configured to match the environment)
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Plaid demo server listening on port ${PORT}`);
+  console.log(`Plaid demo server listening on port ${PORT} (PLAID_ENV=${PLAID_ENV}, FAKE_PLAID=${FAKE_PLAID})`);
 });
