@@ -41,9 +41,9 @@ import com.codewithfk.expensetracker.android.widget.ExpenseTextView
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TransactionListScreen(navController: NavController, viewModel: HomeViewModel = hiltViewModel()) {
+fun ExpenseScreen(navController: NavController, viewModel: HomeViewModel = hiltViewModel()) {
     val state = viewModel.expenses.collectAsState(initial = emptyList())
-    var filterType by remember { mutableStateOf("All") }
+    var filterType by remember { mutableStateOf("Expense") }
     var dateRange by remember { mutableStateOf("All Time") }
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -114,15 +114,6 @@ fun TransactionListScreen(navController: NavController, viewModel: HomeViewModel
                         modifier = Modifier.padding(8.dp)
                     ) {
                         Column {
-                            // Type Filter Dropdown
-                            ExpenseDropDown(
-                                listOfItems = listOf("All", "Expense", "Income"),
-                                onItemSelected = { selected ->
-                                    filterType = selected
-                                    menuExpanded = false // Close menu after selection
-                                }
-                            )
-
                             Spacer(modifier = Modifier.height(8.dp))
 
                             // Date Range Filter Dropdown

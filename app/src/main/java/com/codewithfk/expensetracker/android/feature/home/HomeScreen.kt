@@ -121,13 +121,13 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                 Column(modifier = Modifier.align(Alignment.CenterStart)) {
                     ExpenseTextView(
                         text = "Good Afternoon",
-                        style = Typography.bodyMedium,
-                        color = Color.White
+                        color = Color.White,
+                        style = Typography.bodyMedium
                     )
                     ExpenseTextView(
-                        text = "CodeWithFK",
-                        style = Typography.titleLarge,
-                        color = Color.White
+                        text = "User Name",
+                        color = Color.White,
+                        style = Typography.titleLarge
                     )
 
                     // Small button to launch the PlaidLinkActivity for testing the Plaid flow
@@ -136,11 +136,11 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                         Text(text = "Plaid Demo")
                     }
                 }
-                Image(
-                    painter = painterResource(id = R.drawable.ic_notification),
-                    contentDescription = null,
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                )
+//                Image(
+//                    painter = painterResource(id = R.drawable.ic_notification),
+//                    contentDescription = null,
+//                    modifier = Modifier.align(Alignment.CenterEnd)
+//                )
             }
 
             val state = viewModel.expenses.collectAsState(initial = emptyList())
@@ -282,21 +282,14 @@ fun CardItem(
             Column {
                 ExpenseTextView(
                     text = "Total Balance",
-                    style = Typography.titleMedium,
-                    color = Color.White
+                    color = Color.White,
+                    style = Typography.titleMedium
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 ExpenseTextView(
-                    text = balance, style = Typography.headlineLarge, color = Color.White,
+                    text = balance, color = Color.White, style = Typography.headlineLarge
                 )
             }
-            Image(
-                painter = painterResource(id = R.drawable.dots_menu),
-                contentDescription = null,
-                modifier = Modifier.align(Alignment.CenterEnd).clickable {
-
-                }
-            )
         }
 
         Box(
@@ -340,17 +333,17 @@ fun TransactionList(
                 Box(modifier = modifier.fillMaxWidth()) {
                     ExpenseTextView(
                         text = title,
-                        style = Typography.titleLarge,
+                        style = Typography.titleLarge
                     )
                     if (title == "Recent Transactions") {
                         ExpenseTextView(
                             text = "See all",
-                            style = Typography.bodyMedium,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .clickable {
                                     onSeeAllClicked.invoke()
-                                }
+                                },
+                            style = Typography.bodyMedium
                         )
                     }
                 }
@@ -422,15 +415,15 @@ fun TransactionItem(
             Column {
                 ExpenseTextView(text = title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.size(6.dp))
-                ExpenseTextView(text = date, fontSize = 13.sp, color = LightGrey)
+                ExpenseTextView(text = date, color = LightGrey, fontSize = 13.sp)
             }
         }
         Column(horizontalAlignment = Alignment.End) {
             ExpenseTextView(
                 text = amount,
+                color = color,
                 fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = color
+                fontWeight = FontWeight.Medium
             )
         }
 
@@ -465,7 +458,7 @@ fun TransactionItem(
                         menuExpanded.value = false
                         // Navigate to settings screen
                         // navController.navigate("settings_route")
-                        Log.d("DeleteTransaction", "onDeleteClicked >_<: ")
+                        Log.d("DeleteTransaction", "onDeleteClicked: ")
                         onDeleteButtonClicked(expense)
                     }
                 )
@@ -484,10 +477,10 @@ fun CardRowItem(modifier: Modifier, title: String, amount: String, imaget: Int) 
                 contentDescription = null,
             )
             Spacer(modifier = Modifier.size(8.dp))
-            ExpenseTextView(text = title, style = Typography.bodyLarge, color = Color.White)
+            ExpenseTextView(text = title, color = Color.White, style = Typography.bodyLarge)
         }
         Spacer(modifier = Modifier.size(4.dp))
-        ExpenseTextView(text = amount, style = Typography.titleLarge, color = Color.White)
+        ExpenseTextView(text = amount, color = Color.White, style = Typography.titleLarge)
     }
 }
 

@@ -1,4 +1,4 @@
-package com.codewithfk.expensetracker.android.feature.home
+package com.codewithfk.expensetracker.android.feature.Budget
 
 import androidx.lifecycle.viewModelScope
 import com.codewithfk.expensetracker.android.base.BaseViewModel
@@ -11,9 +11,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.util.Log
+import com.codewithfk.expensetracker.android.feature.home.TransactionItem
 
 @HiltViewModel
-class HomeViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
+class BudgetViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
     val expenses = dao.getAllExpense()
 
     fun deleteExpense(expenseEntity: ExpenseEntity) {
@@ -24,21 +25,15 @@ class HomeViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
     }
     override fun onEvent(event: UiEvent) {
         when (event) {
-            is HomeUiEvent.OnAddExpenseClicked -> {
+            is BudgetUiEvent.OnSeeExpensesClicked -> {
                 viewModelScope.launch {
-                    _navigationEvent.emit(HomeNavigationEvent.NavigateToAddExpense)
+                    _navigationEvent.emit(HomeNavigationEvent.NavigateToSeeAllExpenses)
                 }
             }
 
-            is HomeUiEvent.OnAddIncomeClicked -> {
+            is BudgetUiEvent.OnSeeIncomeClicked -> {
                 viewModelScope.launch {
-                    _navigationEvent.emit(HomeNavigationEvent.NavigateToAddIncome)
-                }
-            }
-
-            is HomeUiEvent.OnSeeAllClicked -> {
-                viewModelScope.launch {
-                    _navigationEvent.emit(HomeNavigationEvent.NavigateToSeeAll)
+                    _navigationEvent.emit(HomeNavigationEvent.NavigateToSeeAllIncome)
                 }
             }
         }
@@ -96,10 +91,7 @@ class HomeViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
     }
 }
 
-sealed class HomeUiEvent : UiEvent() {
-    data object OnAddExpenseClicked : HomeUiEvent()
-    data object OnAddIncomeClicked : HomeUiEvent()
-    data object OnSeeAllClicked : HomeUiEvent()
-
-    data object OnDeleteButtonClicked: HomeUiEvent()
+sealed class BudgetUiEvent : UiEvent() {
+    data object OnSeeIncomeClicked : BudgetUiEvent()
+    data object OnSeeExpensesClicked : BudgetUiEvent()
 }

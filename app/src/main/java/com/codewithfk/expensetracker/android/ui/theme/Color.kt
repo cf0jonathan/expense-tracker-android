@@ -22,6 +22,8 @@ val White80 = Color(0xCCFFFFFF)
 val Red = Color(0xFFFF0000)
 val Green = Color(0xFF00FF00)
 
+val Black = Color(0xFF000000)
+
 sealed class ThemeColors(
     val background: Color,
     val surface: Color,

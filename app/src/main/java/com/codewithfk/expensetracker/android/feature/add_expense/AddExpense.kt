@@ -108,11 +108,11 @@ fun AddExpense(
                         })
                 ExpenseTextView(
                     text = "Add ${if (isIncome) "Income" else "Expense"}",
-                    style = Typography.titleLarge,
-                    color = Color.White,
                     modifier = Modifier
                         .padding(16.dp)
-                        .align(Alignment.Center)
+                        .align(Alignment.Center),
+                    color = Color.White,
+                    style = Typography.titleLarge
                 )
                 Box(modifier = Modifier.align(Alignment.CenterEnd)) {
                     Image(
@@ -204,8 +204,8 @@ fun DataForm(
                 "Rental Income",
                 "Other Income"
             ) else listOf(
-                "Grocery",
                 "Netflix",
+                "Grocery",
                 "Rent",
                 "Paypal",
                 "Starbucks",
@@ -289,8 +289,8 @@ fun DataForm(
         ) {
             ExpenseTextView(
                 text = "Add ${if (isIncome) "Income" else "Expense"}",
-                fontSize = 14.sp,
-                color = Color.White
+                color = Color.White,
+                fontSize = 14.sp
             )
         }
     }
@@ -328,9 +328,9 @@ fun ExpenseDatePickerDialog(
 fun TitleComponent(title: String) {
     ExpenseTextView(
         text = title.uppercase(),
+        color = LightGrey,
         fontSize = 12.sp,
-        fontWeight = FontWeight.Medium,
-        color = LightGrey
+        fontWeight = FontWeight.Medium
     )
     Spacer(modifier = Modifier.size(10.dp))
 }
