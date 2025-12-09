@@ -37,7 +37,7 @@ const PLAID_BASE = {
 
 // FEATURE: FAKE_PLAID enables returning hardcoded Plaid-like transactions for sandbox/dev testing.
 // Default: enabled when PLAID_ENV === 'sandbox' or when env FAKE_PLAID=true
-const FAKE_PLAID = (process.env.FAKE_PLAID === 'true') || (PLAID_ENV === 'sandbox');
+const FAKE_PLAID = true;
 
 // Simple helper that returns a Plaid-like /transactions/get response object for demo/testing.
 function generateFakeTransactions(accessToken) {
@@ -138,6 +138,41 @@ app.get('/create_link_token', requireDemoKey, async (req, res) => {
   } catch (err) {
     console.error('link token create error:', err?.response?.data || err.message || err);
     res.status(502).json({ error: 'link token creation failed', details: err?.response?.data || err?.message });
+  }
+});
+
+// Create sandbox public_token helper (placed before exchange_public_token)
+// When FAKE_PLAID is enabled this returns a synthetic public_token so the client can proceed in dev.
+app.post('/create_sandbox_public_token', requireDemoKey, async (req, res) => {
+  try {
+    const initial_products = req.body?.initial_products || ['transactions'];
+    const institution_id = req.body?.institution_id || 'ins_109508';
+
+    if (FAKE_PLAID) {
+      const public_token = `public-fake-${Math.random().toString(36).substring(2,10)}`;
+      const request_id = `req-${Math.random().toString(36).substring(2,8)}`;
+      console.log('FAKE_PLAID: created fake public_token', public_token, 'for products', initial_products);
+      return res.json({ public_token, request_id });
+    }
+
+    if (PLAID_ENV !== 'sandbox') {
+      return res.status(400).json({ error: 'create_sandbox_public_token is only available in sandbox mode' });
+    }
+
+    const body = {
+      client_id: PLAID_CLIENT_ID,
+      secret: PLAID_SECRET,
+      institution_id,
+      initial_products
+    };
+
+    const resp = await axios.post(`${PLAID_BASE}/sandbox/public_token/create`, body, { timeout: 10000 });
+    return res.json(resp.data);
+  } catch (err) {
+    console.error('create_sandbox_public_token error:', err?.response?.status, err?.response?.data || err?.message || err);
+    const status = err?.response?.status || 502;
+    const details = err?.response?.data || err?.message;
+    return res.status(status).json({ error: 'create_sandbox_public_token failed', details });
   }
 });
 
@@ -306,49 +341,32 @@ app.post('/transactions_sync_for_access_token', requireDemoKey, async (req, res)
     }
 
     const resp = await axios.post(`${PLAID_BASE}/transactions/sync`, body, { timeout: 20000 });
-    res.json(resp.data);
+    return res.json(resp.data);
   } catch (err) {
-    console.error('transactions_sync error:', err?.response?.data || err.message || err);
-    res.status(502).json({ error: 'transactions_sync failed', details: err?.response?.data || err?.message });
+    console.error('transactions_sync_for_access_token error:', err?.response?.data || err.message || err);
+    res.status(502).json({ error: 'transactions sync failed', details: err?.response?.data || err?.message });
   }
 });
 
-// Webhook endpoint (demo) - lightweight acknowledgement and demo behavior
-app.post('/webhook', express.json(), (req, res) => {
+// New: webhook handler for Plaid webhooks (DEMO ONLY)
+// For real apps, verify the webhook signature and process securely.
+// This demo simply logs and echoes the webhook data.
+app.post('/webhook', async (req, res) => {
   try {
-    const body = req.body || {};
-    console.log('Webhook received:', JSON.stringify(body));
+    const { webhook_code, access_token } = req.body;
+    console.log('Webhook received:', req.body);
 
-    // Demo-only: if FAKE_PLAID and webhook indicates INITIAL_UPDATE, optionally cache fake txns
-    if (FAKE_PLAID && body.webhook_code === 'INITIAL_UPDATE' && body.item_id) {
-      const access_token = ITEM_ACCESS_TOKENS[body.item_id] || null;
-      if (access_token && !ITEM_TRANSACTIONS[access_token]) {
-        ITEM_TRANSACTIONS[access_token] = generateFakeTransactions(access_token);
-        console.log('FAKE_PLAID: cached fake transactions for access_token from webhook', access_token);
-      }
-    }
-
-    // Acknowledge quickly
-    return res.status(200).json({ ok: true });
-  } catch (e) {
-    console.error('Webhook handler error', e);
-    return res.status(500).json({ error: 'webhook handler failed' });
+    // For demo, echo back the webhook code and access_token in the response.
+    res.json({ webhook_code, access_token });
+  } catch (err) {
+    console.error('Webhook processing error:', err?.message || err);
+    res.status(500).json({ error: 'webhook processing failed', details: err?.message });
   }
 });
 
-// Debug endpoint to inspect in-memory store (DEMO ONLY).
-app.get('/debug/state', requireDemoKey, (req, res) => {
-  try {
-    const items = Object.keys(ITEM_ACCESS_TOKENS).map(itemId => ({ item_id: itemId, access_token_present: !!ITEM_ACCESS_TOKENS[itemId] }));
-    const txs = Object.keys(ITEM_TRANSACTIONS).map(at => ({ access_token: at, total_transactions: ITEM_TRANSACTIONS[at]?.total_transactions || 0 }));
-    res.json({ items, transactions_cached: txs, FAKE_PLAID });
-  } catch (e) {
-    res.status(500).json({ error: 'debug failed', details: e?.message });
-  }
-});
-
-// Start server
+// Start the server (port 3000 for Replit, or use env PORT)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Plaid demo server listening on port ${PORT} (PLAID_ENV=${PLAID_ENV}, FAKE_PLAID=${FAKE_PLAID})`);
+  console.log(`Plaid demo server listening on port ${PORT}`);
 });
+
