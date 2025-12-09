@@ -1,5 +1,6 @@
 package com.codewithfk.expensetracker.android
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -48,7 +49,7 @@ private const val TAG = "PlaidLinkActivity"
 private const val BACKEND_BASE = "https://8662df20-18fc-4262-828b-6bcc97648a5e-00-10mhwkj9qom2o.janeway.replit.dev" // <-- Replit URL (no trailing slash)
 
 // Helper to join paths safely to BACKEND_BASE (avoids double-slashes and makes logs readable)
-private fun joinUrl(path: String): String = BACKEND_BASE.trimEnd('/') + "/${path.trimStart('/')}"
+private fun joinUrl(path: String): String = BACKEND_BASE.trimEnd('/') + "/${path.trimStart('/') }"
 private const val DEMO_API_KEY = "totallySecureDemoKeyForProjectAtUALR" // <-- replace with your DEMO_API_KEY or wire from BuildConfig/gradle property
 
 @AndroidEntryPoint
@@ -58,6 +59,9 @@ class PlaidLinkActivity : ComponentActivity() {
 
     // Expose a small Compose-friendly runtime status so the UI can show errors or SDK state.
     private val plaidRuntimeStatus = mutableStateOf<String?>(null)
+    // Debug: last raw JSON responses from server endpoints to aid debugging when transactions don't appear
+    private val lastExchangeJson = mutableStateOf<String?>(null)
+    private val lastTransactionsJson = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +92,10 @@ class PlaidLinkActivity : ComponentActivity() {
         var linkToken by remember { mutableStateOf<String?>(null) }
         var loading by remember { mutableStateOf(false) }
         var lastError by remember { mutableStateOf<String?>(null) }
+
+        // Local references to debug JSON so Compose recomposes on change
+        val debugExchange by remember { lastExchangeJson }
+        val debugTxns by remember { lastTransactionsJson }
 
         Column(
             modifier = Modifier
@@ -202,6 +210,14 @@ class PlaidLinkActivity : ComponentActivity() {
                 }, modifier = Modifier.padding(top = 12.dp)) {
                     Text(text = "Open Plaid Link (TODO)")
                 }
+            }
+
+            // Debug: show last exchange and transactions raw JSON responses to help diagnose missing txns
+            debugExchange?.let { ex ->
+                Text(text = "Last exchange response:\n${ex.take(1000)}", modifier = Modifier.padding(top = 12.dp))
+            }
+            debugTxns?.let { tx ->
+                Text(text = "Last transactions response:\n${tx.take(1000)}", modifier = Modifier.padding(top = 12.dp))
             }
 
             lastError?.let { err ->
@@ -326,6 +342,170 @@ class PlaidLinkActivity : ComponentActivity() {
         }
     }
 
+    // NEW: handle Plaid Link activity results. When the Plaid SDK is enabled the Link flow will return
+    // a LinkResult via the activity result. We parse it here, extract the public_token on success, and
+    // forward it to `handlePublicToken`. We keep the code guarded so it doesn't fail to compile when the
+    // Plaid SDK is not present.
+    // NOTE: Plaid Link result handling depends on the Plaid SDK version and the Activity Result API.
+    // The previous implementation used `LinkResult.fromIntent` which is not available with all SDK versions
+    // and caused compilation failures when the SDK's expected API changed. To keep this sample compiling
+    // whether or not the Plaid SDK is added, we provide a stub here and recommend integrating the
+    // Activity Result API when you enable the Plaid SDK.
+    //
+    // Recommended integration (when Plaid SDK is enabled):
+    // 1) Register an ActivityResultLauncher and call `Plaid.create(...).openWithLauncher(...)` or use
+    //    the SDK's current recommended pattern from Plaid docs to receive a success callback.
+    // 2) In the success callback call `handlePublicToken(publicToken)` to exchange and fetch transactions.
+    // See Plaid Android Link docs for the correct API for your SDK version.
+    //
+    // For now, leave a no-op stub so builds don't fail.
+    private fun handlePlaidResultIntentIfPresent(/* intent: Intent? */) {
+        // Intentionally empty: implement result parsing using the Plaid SDK's current API when enabling the SDK.
+        Log.d(TAG, "Plaid result handler stub called — implement when enabling Plaid SDK")
+    }
+
+    // Reflective Activity result handler for Plaid Link.
+    // Uses reflection to avoid compile-time dependency on a specific Plaid SDK API surface.
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        try {
+            // Try to load Plaid LinkResult class and call the static fromIntent(Intent) method.
+            val linkResultClass = Class.forName("com.plaid.link.result.LinkResult")
+            val fromIntent = linkResultClass.getMethod("fromIntent", Intent::class.java)
+            val linkResult = fromIntent.invoke(null, data) ?: run {
+                Log.d(TAG, "No LinkResult produced from intent")
+                return
+            }
+
+            val cls = linkResult.javaClass
+            val simpleName = cls.simpleName ?: cls.name
+            Log.d(TAG, "Plaid LinkResult received (runtime class=$simpleName)")
+
+            // Success case: extract publicToken via getter or field using reflection.
+            if (simpleName.equals("Success", ignoreCase = true) || simpleName.endsWith("Success")) {
+                var publicToken: String? = null
+                try {
+                    // try getter first
+                    val m = cls.getMethod("getPublicToken")
+                    publicToken = m.invoke(linkResult) as? String
+                } catch (e: Exception) {
+                    // ignore
+                }
+                if (publicToken.isNullOrBlank()) {
+                    try {
+                        val f = cls.getDeclaredField("publicToken")
+                        f.isAccessible = true
+                        publicToken = f.get(linkResult) as? String
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
+
+                if (!publicToken.isNullOrBlank()) {
+                    Log.d(TAG, "Plaid Link success - obtained public_token (redacted)")
+                    handlePublicToken(publicToken)
+                } else {
+                    Log.w(TAG, "Plaid Link success but could not extract public_token via reflection")
+                }
+                return
+            }
+
+            // Exit case: user cancelled or error occurred. Try to log linkError if present.
+            if (simpleName.equals("Exit", ignoreCase = true) || simpleName.endsWith("Exit")) {
+                try {
+                    val f = cls.getDeclaredField("linkError")
+                    f.isAccessible = true
+                    val linkError = f.get(linkResult)
+                    Log.i(TAG, "Plaid Link exited; linkError=$linkError")
+                } catch (e: Exception) {
+                    Log.i(TAG, "Plaid Link exited (no linkError available)")
+                }
+                plaidRuntimeStatus.value = "Plaid Link exited"
+                return
+            }
+
+            Log.w(TAG, "Unhandled Plaid Link result type: $simpleName")
+        } catch (e: ClassNotFoundException) {
+            Log.w(TAG, "Plaid LinkResult class not found - Plaid SDK may not be present", e)
+        } catch (e: NoSuchMethodException) {
+            Log.w(TAG, "LinkResult.fromIntent not available on this Plaid SDK version", e)
+            // Fallback: inspect the Intent extras directly for common public_token keys or nested result objects
+            try {
+                if (data != null) {
+                    // Log available extras keys to help debugging
+                    val extras = data.extras
+                    if (extras != null) {
+                        val keys = extras.keySet()
+                        Log.d(TAG, "Intent extras keys: $keys")
+                        for (k in keys) {
+                            try {
+                                val v = extras.get(k)
+                                Log.d(TAG, "extras[$k] = ${v?.toString()?.take(200)}")
+                            } catch (ex: Exception) {
+                                Log.d(TAG, "extras[$k] = <unreadable>")
+                            }
+                        }
+                    }
+
+                    // Check common direct string extras
+                    val directKeys = listOf("public_token", "publicToken", "link_public_token", "linkToken", "public-token", "public-token")
+                    for (k in directKeys) {
+                        val valStr = data.getStringExtra(k) ?: extras?.getString(k)
+                        if (!valStr.isNullOrBlank()) {
+                            Log.d(TAG, "Found public token in intent extra '$k' (redacted)")
+                            handlePublicToken(valStr)
+                            return
+                        }
+                    }
+
+                    // If there's a nested object, try reflecting it for a publicToken field/getter
+                    if (extras != null) {
+                        for (k in extras.keySet()) {
+                            val obj = extras.get(k) ?: continue
+                            try {
+                                val cls = obj.javaClass
+                                // attempt getter
+                                try {
+                                    val m = cls.getMethod("getPublicToken")
+                                    val res = m.invoke(obj) as? String
+                                    if (!res.isNullOrBlank()) {
+                                        Log.d(TAG, "Found public token via nested getter in extras.$k (redacted)")
+                                        handlePublicToken(res)
+                                        return
+                                    }
+                                } catch (_: Exception) {
+                                }
+                                // attempt field
+                                try {
+                                    val f = cls.getDeclaredField("publicToken")
+                                    f.isAccessible = true
+                                    val res = f.get(obj) as? String
+                                    if (!res.isNullOrBlank()) {
+                                        Log.d(TAG, "Found public token via nested field in extras.$k (redacted)")
+                                        handlePublicToken(res)
+                                        return
+                                    }
+                                } catch (_: Exception) {
+                                }
+                            } catch (_: Exception) {
+                                // ignore non-reflectable extras
+                            }
+                        }
+                    }
+
+                    Log.w(TAG, "Could not extract public_token from Intent extras for this Plaid SDK version")
+                } else {
+                    Log.w(TAG, "No intent data available to inspect for public_token fallback")
+                }
+            } catch (ex: Exception) {
+                Log.e(TAG, "Error while attempting fallback intent extras parsing", ex)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error while handling Plaid Link result via reflection", e)
+        }
+    }
+
     private suspend fun exchangePublicToken(publicToken: String): String? = withContext(Dispatchers.IO) {
         try {
             val urlStr = joinUrl("exchange_public_token")
@@ -351,6 +531,9 @@ class PlaidLinkActivity : ComponentActivity() {
             val respBody = if (code in 200..299) conn.inputStream.bufferedReader().use(BufferedReader::readText) else conn.errorStream?.bufferedReader()?.use(BufferedReader::readText)
 
             Log.d(TAG, "exchange_public_token HTTP $code response=${respBody?.take(2000)}")
+            // Publish raw response to debug state so the UI can show it
+            withContext(Dispatchers.Main) { lastExchangeJson.value = respBody }
+
             if (code !in 200..299) {
                 withContext(Dispatchers.Main) {
                     plaidRuntimeStatus.value = "exchange_public_token failed: HTTP $code - ${respBody ?: "<no body>"}"
@@ -417,6 +600,8 @@ class PlaidLinkActivity : ComponentActivity() {
                 lastRespBody = respBody
 
                 Log.d(TAG, "transactions_for_access_token HTTP $code response=${respBody?.take(2000)}")
+                // Publish raw transactions response to UI for debugging
+                withContext(Dispatchers.Main) { lastTransactionsJson.value = respBody }
 
                 if (code in 200..299) {
                     if (respBody.isNullOrBlank()) {
@@ -501,7 +686,9 @@ class PlaidLinkActivity : ComponentActivity() {
 
     private suspend fun fetchLinkToken(): String? = withContext(Dispatchers.IO) {
         try {
-            val urlStr = joinUrl("create_link_token")
+            // Attach a client_user_id so the server creates a Link token tied to a distinct user.
+            val clientId = "android-demo-user-${System.currentTimeMillis()}"
+            val urlStr = joinUrl("create_link_token?client_user_id=$clientId")
             Log.d(TAG, "GET $urlStr")
             val url = URL(urlStr)
             val conn = (url.openConnection() as HttpURLConnection).apply {

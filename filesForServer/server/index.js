@@ -37,7 +37,7 @@ const PLAID_BASE = {
 
 // FEATURE: FAKE_PLAID enables returning hardcoded Plaid-like transactions for sandbox/dev testing.
 // Default: enabled when PLAID_ENV === 'sandbox' or when env FAKE_PLAID=true
-const FAKE_PLAID = true;
+const FAKE_PLAID = false;
 
 // Simple helper that returns a Plaid-like /transactions/get response object for demo/testing.
 function generateFakeTransactions(accessToken) {
