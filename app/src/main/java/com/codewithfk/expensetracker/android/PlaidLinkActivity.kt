@@ -746,8 +746,22 @@ class PlaidLinkActivity : ComponentActivity() {
             val t = transactions.getJSONObject(i)
             val name = t.optString("name", "Plaid Transaction")
             val amount = t.optDouble("amount", 0.0)
-            val date = t.optString("date", "")
-            val type = if (amount >= 0) "Expense" else "Income"
+            var date = t.optString("date", "")
+            // Normalize Plaid's ISO date (yyyy-MM-dd) into the app's expected dd/MM/yyyy
+            try {
+                if (date.matches(Regex("^\\d{4}-\\d{2}-\\d{2}"))) {
+                    val inFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    val outFmt = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                    val parsed = inFmt.parse(date)
+                    if (parsed != null) {
+                        date = outFmt.format(parsed)
+                    }
+                }
+            } catch (e: Exception) {
+                // If conversion fails, keep original date string — Utils.getMillisFromDate will attempt parsing and handle failure.
+                Log.w(TAG, "Date normalization failed for '$date'", e)
+            }
+             val type = if (amount >= 0) "Expense" else "Income"
 
             // Truncate the title to avoid long strings causing UI layout problems
             val safeName = com.codewithfk.expensetracker.android.utils.Utils.truncateTitle(name)

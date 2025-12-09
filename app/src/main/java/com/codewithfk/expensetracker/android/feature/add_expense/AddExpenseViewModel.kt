@@ -7,6 +7,7 @@ import com.codewithfk.expensetracker.android.base.NavigationEvent
 import com.codewithfk.expensetracker.android.base.UiEvent
 import com.codewithfk.expensetracker.android.data.dao.ExpenseDao
 import com.codewithfk.expensetracker.android.data.model.ExpenseEntity
+import com.codewithfk.expensetracker.android.utils.Utils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,7 +20,10 @@ class AddExpenseViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewMod
 
     suspend fun addExpense(expenseEntity: ExpenseEntity): Boolean {
         return try {
-            dao.insertExpense(expenseEntity)
+            // Ensure titles stored are truncated to avoid UI breakage
+            val safeTitle = Utils.truncateTitle(expenseEntity.title)
+            val safeEntity = expenseEntity.copy(title = safeTitle)
+            dao.insertExpense(safeEntity)
             true
         } catch (ex: Throwable) {
             false
@@ -59,5 +63,3 @@ sealed class AddExpenseUiEvent : UiEvent() {
     object OnBackPressed : AddExpenseUiEvent()
     object OnMenuClicked : AddExpenseUiEvent()
 }
-
-

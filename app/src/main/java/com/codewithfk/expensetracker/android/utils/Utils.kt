@@ -11,6 +11,17 @@ import java.util.Locale
 
 object Utils {
 
+    // Max length for stored/displayed titles to avoid layout breakage
+    const val MAX_TITLE_LENGTH = 20
+
+    /**
+     * Truncate long titles and append an ellipsis. Returns empty string for null/blank input.
+     */
+    fun truncateTitle(input: String?, maxLen: Int = MAX_TITLE_LENGTH): String {
+        if (input.isNullOrBlank()) return ""
+        return if (input.length <= maxLen) input else input.substring(0, maxLen - 1).trimEnd() + "…"
+    }
+
     fun formatDateToHumanReadableForm(dateInMillis: Long): String {
         val dateFormatter = SimpleDateFormat("dd/MM/YYYY", Locale.getDefault())
         return dateFormatter.format(dateInMillis)
@@ -62,14 +73,13 @@ object Utils {
     }
 
     fun getItemIcon(item: ExpenseEntity): Int {
-        return if (item.title == "Paypal") {
-            R.drawable.ic_paypal
-        } else if (item.title == "Netflix") {
-            R.drawable.ic_netflix
-        } else if (item.title == "Starbucks") {
-            R.drawable.ic_starbucks
-        } else {
-            R.drawable.ic_upwork
+        val title = item.title ?: ""
+        val lower = title.lowercase(Locale.getDefault())
+        return when {
+            lower.contains("paypal") -> R.drawable.ic_paypal
+            lower.contains("netflix") -> R.drawable.ic_netflix
+            lower.contains("starbuck") -> R.drawable.ic_starbucks
+            else -> R.drawable.ic_upwork
         }
     }
 
