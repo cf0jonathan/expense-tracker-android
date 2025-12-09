@@ -444,15 +444,7 @@ fun TransactionItem(
                 expanded = menuExpanded.value,
                 onDismissRequest = { menuExpanded.value = false }
             ) {
-                DropdownMenuItem(
-                    text = { ExpenseTextView(text = "Edit") },
-                    onClick = {
-                        menuExpanded.value = false
-                        // Navigate to profile screen
-                        // navController.navigate("profile_route")
-                    }
-                )
-                DropdownMenuItem(
+               DropdownMenuItem(
                     text = { ExpenseTextView(text = "Delete") },
                     onClick = {
                         menuExpanded.value = false

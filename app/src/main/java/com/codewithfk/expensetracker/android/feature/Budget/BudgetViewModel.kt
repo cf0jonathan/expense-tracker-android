@@ -12,6 +12,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.util.Log
 import com.codewithfk.expensetracker.android.feature.home.TransactionItem
+import java.text.SimpleDateFormat
+import java.util.Date
 
 @HiltViewModel
 class BudgetViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel() {
@@ -36,6 +38,7 @@ class BudgetViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel()
                     _navigationEvent.emit(HomeNavigationEvent.NavigateToSeeAllIncome)
                 }
             }
+
         }
     }
 
@@ -89,9 +92,30 @@ class BudgetViewModel @Inject constructor(val dao: ExpenseDao) : BaseViewModel()
         totalIncome -= total
         return Utils.formatCurrency(totalIncome)
     }
+
+    fun getSavingsPercentage(list: List<ExpenseEntity>): String {
+        var totalIncome = 0.0
+        for (expense in list) {
+            if (expense.type == "Income") {
+                totalIncome += expense.amount
+            }
+        }
+        var totalExpenses = 0.0
+        for (expense in list) {
+            if (expense.type != "Income") {
+                totalExpenses += expense.amount
+            }
+        }
+
+        val savings = totalIncome - totalExpenses
+        val savingsPercentage = if (totalIncome > 0) (savings / totalIncome) * 100 else 0.0
+
+        return String.format("%.2f", savingsPercentage) + "%"
+    }
 }
 
 sealed class BudgetUiEvent : UiEvent() {
     data object OnSeeIncomeClicked : BudgetUiEvent()
     data object OnSeeExpensesClicked : BudgetUiEvent()
+
 }

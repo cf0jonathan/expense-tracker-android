@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,17 +52,24 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.codewithfk.expensetracker.android.R
+import com.codewithfk.expensetracker.android.base.AddExpenseNavigationEvent
 import com.codewithfk.expensetracker.android.base.HomeNavigationEvent
 import com.codewithfk.expensetracker.android.base.NavigationEvent
+import com.codewithfk.expensetracker.android.data.model.ExpenseEntity
 import com.codewithfk.expensetracker.android.feature.Budget.BudgetCardItem
 import com.codewithfk.expensetracker.android.feature.Budget.BudgetCardRowItem
 import com.codewithfk.expensetracker.android.feature.Budget.BudgetUiEvent
 import com.codewithfk.expensetracker.android.feature.Budget.BudgetViewModel
 import com.codewithfk.expensetracker.android.feature.home.HomeUiEvent
+import com.codewithfk.expensetracker.android.feature.home.HomeViewModel
 import com.codewithfk.expensetracker.android.feature.home.MultiFloatingActionButton
+import com.codewithfk.expensetracker.android.feature.home.TransactionItem
 import com.codewithfk.expensetracker.android.utils.Utils
 import com.codewithfk.expensetracker.android.feature.home.TransactionList
 import com.codewithfk.expensetracker.android.feature.stats.StatsViewModel
+import com.codewithfk.expensetracker.android.ui.theme.Green
+import com.codewithfk.expensetracker.android.ui.theme.LightGrey
+import com.codewithfk.expensetracker.android.ui.theme.Red
 import com.codewithfk.expensetracker.android.ui.theme.Typography
 import com.codewithfk.expensetracker.android.ui.theme.Zinc
 import com.codewithfk.expensetracker.android.widget.ExpenseTextView
@@ -68,6 +78,8 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.components.YAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineDataSet
+import java.text.DateFormat
+import java.util.Calendar
 
 @Composable
 fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = hiltViewModel()) {
@@ -120,6 +132,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = hilt
             val expense = viewModel.getTotalExpense(state.value)
             val income = viewModel.getTotalIncome(state.value)
             val balance = viewModel.getBudgetLeft(state.value)
+            val savings = viewModel.getSavingsPercentage(state.value)
             val menuExpanded = remember { mutableStateOf(false) }
             BudgetCardItem(
                 modifier = Modifier.constrainAs(card) {
@@ -127,7 +140,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = hilt
                     start.linkTo(parent.start)
                     end.linkTo(parent.end)
                 },
-                balance = balance, income = income, expense = expense,
+                balance = balance, income = income, expense = expense, savings = savings,
                 onSeeIncomeClicked = {
                     viewModel.onEvent(BudgetUiEvent.OnSeeIncomeClicked)
                 },
@@ -142,7 +155,7 @@ fun BudgetScreen(navController: NavController, viewModel: BudgetViewModel = hilt
 @Composable
 fun BudgetCardItem(
     modifier: Modifier,
-    balance: String, income: String, expense: String,
+    balance: String, income: String, expense: String, savings: String,
     onSeeIncomeClicked: () -> Unit,
     onSeeExpensesClicked: () -> Unit,
 ) {
@@ -166,7 +179,7 @@ fun BudgetCardItem(
             ) {
                 Row {
                     ExpenseTextView(
-                        text = "Remaining Money for this Month",
+                        text = "Remaining Money in the Budget",
                         color = Color.White,
                         style = Typography.titleMedium
                     )
@@ -179,25 +192,28 @@ fun BudgetCardItem(
                         },
                         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
                     )
-                    DropdownMenu(
-                        expanded = menuExpanded.value,
-                        onDismissRequest = { menuExpanded.value = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { ExpenseTextView(text = "Income") },
-                            onClick = {
-                                menuExpanded.value = false
-                                onSeeIncomeClicked.invoke()
+                        Box() {
+                            DropdownMenu(
+                                expanded = menuExpanded.value,
+                                onDismissRequest = { menuExpanded.value = false },
+                                offset = androidx.compose.ui.unit.DpOffset(x = 400.dp, y = 0.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { ExpenseTextView(text = "Income") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        onSeeIncomeClicked.invoke()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { ExpenseTextView(text = "Expenses") },
+                                    onClick = {
+                                        menuExpanded.value = false
+                                        onSeeExpensesClicked.invoke()
+                                    }
+                                )
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { ExpenseTextView(text = "Expenses") },
-                            onClick = {
-                                menuExpanded.value = false
-                                onSeeExpensesClicked.invoke()
-                            }
-                        )
-                    }
+                        }
                 }
                 Spacer(modifier = Modifier.size(8.dp))
                 ExpenseTextView(
@@ -215,7 +231,7 @@ fun BudgetCardItem(
             BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterStart),
-                title = "Budget Income",
+                title = "Budget",
                 amount = income,
                 imaget = R.drawable.ic_income
             )
@@ -223,9 +239,9 @@ fun BudgetCardItem(
             BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterEnd),
-                title = "Budget Expense",
-                amount = expense,
-                imaget = R.drawable.ic_expense
+                title = "Saved",
+                amount = savings,
+                imaget = R.drawable.ic_income
             )
         }
 
@@ -242,18 +258,19 @@ fun BudgetCardItem(
                 imaget = R.drawable.ic_income
             )
             Spacer(modifier = Modifier.size(8.dp))
+
             BudgetCardRowItem(
                 modifier = Modifier
                     .align(Alignment.CenterEnd),
-                title = "Expense",
+                title = "Expenses",
                 amount = expense,
                 imaget = R.drawable.ic_expense
             )
         }
 
+
     }
 }
-
 @Composable
 fun BudgetCardRowItem(modifier: Modifier, title: String, amount: String, imaget: Int) {
     Column(modifier = modifier) {

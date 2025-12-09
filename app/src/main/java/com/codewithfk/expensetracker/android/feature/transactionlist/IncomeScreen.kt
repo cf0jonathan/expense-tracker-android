@@ -77,7 +77,7 @@ fun IncomeScreen(navController: NavController, viewModel: HomeViewModel = hiltVi
 
                 // Title
                 ExpenseTextView(
-                    text = "Transactions",
+                    text = "Income",
                     modifier = Modifier
                         .padding(16.dp)
                         .align(Alignment.Center),
