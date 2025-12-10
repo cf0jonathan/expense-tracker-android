@@ -444,7 +444,7 @@ fun TransactionItem(
                 expanded = menuExpanded.value,
                 onDismissRequest = { menuExpanded.value = false }
             ) {
-               DropdownMenuItem(
+                DropdownMenuItem(
                     text = { ExpenseTextView(text = "Delete") },
                     onClick = {
                         menuExpanded.value = false
